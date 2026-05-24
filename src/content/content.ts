@@ -265,6 +265,66 @@ class DefaultAdapter implements PlatformAdapter {
 }
 
 /**
+ * YouTube adapter.
+ * YouTube использует <video> с классами video-stream или html5-main-video.
+ * Видео может находиться в Shadow DOM, поэтому ищем через querySelectorAll.
+ * Оригинальный Transpose проверяет host на наличие "youtu".
+ */
+class YouTubeAdapter implements PlatformAdapter {
+  readonly platform = 'YouTube';
+
+  canHandle(url: string): boolean {
+    return url.includes('youtube.com') || url.includes('youtu.be');
+  }
+
+  findMedia(): HTMLMediaElement | null {
+    // YouTube использует video с классами video-stream или html5-main-video
+    const videos = document.querySelectorAll<HTMLVideoElement>(
+      'video.video-stream, video.html5-main-video',
+    );
+    if (videos.length > 0) {
+      // Выбираем видео с наибольшей площадью (основное, не реклама)
+      let best: HTMLVideoElement | null = null;
+      let bestArea = 0;
+      for (const v of videos) {
+        // Пропускаем рекламу
+        if (v.classList.contains('ad-showing') || v.closest('.ad-container')) continue;
+        const rect = v.getBoundingClientRect();
+        const area = rect.width * rect.height;
+        if (area > bestArea) {
+          bestArea = area;
+          best = v;
+        }
+      }
+      if (best) return best;
+      return videos[0];
+    }
+
+    // Fallback: ищем все video на странице
+    const allVideos = document.querySelectorAll<HTMLVideoElement>('video');
+    if (allVideos.length > 0) {
+      let best: HTMLVideoElement | null = null;
+      let bestArea = 0;
+      for (const v of allVideos) {
+        const rect = v.getBoundingClientRect();
+        const area = rect.width * rect.height;
+        if (area > bestArea) {
+          bestArea = area;
+          best = v;
+        }
+      }
+      return best;
+    }
+
+    return null;
+  }
+
+  containsPlayableMedia(): boolean {
+    return !!document.querySelector('video.video-stream, video.html5-main-video, video');
+  }
+}
+
+/**
  * SoundCloud adapter.
  * SoundCloud использует кастомный плеер с элементами <audio>,
  * которые могут быть созданы динамически через JavaScript.
@@ -370,6 +430,7 @@ class AdapterManager {
 
   constructor() {
     this.adapters = [
+      new YouTubeAdapter(),
       new SoundCloudAdapter(),
       new JunoDownloadAdapter(),
       new DefaultAdapter(), // должен быть последним (fallback)
@@ -441,6 +502,12 @@ class AudioEngine {
     // Подписываемся на перехват создания медиа-элементов (для SoundCloud и других SPA)
     onMediaElementCreated = (el: HTMLMediaElement) => {
       if (this.mediaElement) return; // уже есть элемент
+
+      // Фильтр: на YouTube есть аудио-эффекты (звуки поиска, навигации) —
+      // они имеют src вида "/s/search/audio/failure.mp3". Пропускаем их.
+      if (el instanceof HTMLAudioElement && el.src && el.src.includes('/s/search/audio/')) {
+        return;
+      }
 
       // Если у элемента уже есть src — подключаемся сразу
       if (hasValidSource(el)) {
