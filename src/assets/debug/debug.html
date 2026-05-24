@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>Transpose ▲▼ Diagnostics</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    body {
+      position: relative;
+      font-size: 16px;
+      font-family: sans-serif;
+      padding: 16px;
+    }
+
+    h2 {
+      margin-top: 0;
+    }
+
+    h3 {
+      margin-top: 24px;
+      margin-bottom: 6px;
+    }
+
+    button {
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+
+    pre {
+      background: #f6f6f6;
+      padding: 8px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+    }
+
+    .actions {
+      margin-bottom: 16px;
+    }
+
+    .diagnostics {
+      margin-top: 32px;
+    }
+
+  </style>
+
+</head>
+
+<body>
+<div class="container">
+  <h1>Support diagnostics</h1>
+  <p>
+    Copy this information and send it to
+    <a href="mailto:support@transpose.video" target="_blank">support@transpose.video</a>
+    if requested by support.
+  </p>
+
+  <button id="btn-copy-support" type="button">
+    Copy diagnostics to clipboard
+  </button>
+
+  <div id="copy-status" role="status" aria-live="polite" style="margin-top: 8px;"></div>
+</div>
+
+
+  <div class="container diagnostics">
+    <h2>Diagnostics</h2>
+
+    <div class="actions">
+      <button id="btn-run-spotify" type="button">
+        Run Spotify diagnostics
+      </button>
+      <button id="btn-request-spotify" type="button">
+        Request Spotify permission
+      </button>
+    </div>
+
+    <h3>User agent</h3>
+    <pre id="user-agent"></pre>
+
+    <h3>Environment</h3>
+    <pre id="env"></pre>
+
+    <h3>Diagnostics log</h3>
+    <p>Status and diagnostic events from this diagnostics page/session.</p>
+    <pre id="errors"></pre>
+
+    <h3>Runtime log</h3>
+    <p>Persistent runtime log for diagnostics, warnings and errors.</p>
+    <div class="actions">
+      <button id="btn-refresh-runtime-log" type="button">Refresh runtime log</button>
+      <button id="btn-copy-runtime-log" type="button">Copy runtime log</button>
+      <button id="btn-clear-runtime-log" type="button">Clear runtime log</button>
+    </div>
+    <pre id="runtime-log"></pre>
+
+    <h3>Managed / enterprise hints</h3>
+    <pre id="managed"></pre>
+
+    <h3>WASM basic compile</h3>
+    <pre id="wasm-basic"></pre>
+
+    <h3>AudioContext</h3>
+    <pre id="audio-context"></pre>
+
+    <h3>AudioWorklet</h3>
+    <pre id="audio-worklet"></pre>
+
+    <h3>Extension context</h3>
+    <pre id="extension-context"></pre>
+
+    <h3>Effective permissions</h3>
+    <pre id="permissions-effective"></pre>
+
+    <h3>Spotify permissions</h3>
+    <pre id="spotify-permissions"></pre>
+
+    <h3>Spotify diagnostics</h3>
+    <pre id="spotify-diag"></pre>
+
+    <h3>Spotify diagnostics (raw copy)</h3>
+    <pre id="spotify-diag-raw"></pre>
+
+    <h3>chrome.storage.sync</h3>
+    <pre id="storage-sync"></pre>
+
+    <h3>chrome.storage.local</h3>
+    <pre id="storage-local"></pre>
+
+  </div>
+
+
+  <div class="container"></div>
+  <button id="clear">Clear all extension data</button>
+  </div>
+
+  <script src="debug.js"></script>
+</body>
+
+</html>

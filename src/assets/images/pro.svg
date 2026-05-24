@@ -1,0 +1,12 @@
+<!-- pill border (unchanged size) -->
+
+
+
+
+
+
+
+ <svg xmlns="http://www.w3.org/2000/svg" width="40" height="20" viewBox="0 0 44 22" fill="none" role="img" aria-label="PRO">
+  <rect x="0.75" y="0.75" width="42.5" height="20.5" rx="10.25" stroke="currentColor" stroke-width="1.5" fill="none" />
+  <text x="50%" y="55%" fill="currentColor" font-family="Roboto Mono, Arial, sans-serif" font-size="14" font-weight="700" dominant-baseline="middle" text-anchor="middle" letter-spacing=".5">PRO</text>
+</svg> 

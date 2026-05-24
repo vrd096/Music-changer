@@ -1,0 +1,54 @@
+{
+  "action": {
+    "default_icon": {
+      "128": "assets/icons/icon-128x128.png",
+      "16": "assets/icons/icon-16-32x32.png",
+      "32": "assets/icons/icon-32x32.png",
+      "48": "assets/icons/icon-48x48.png"
+    },
+    "default_title": "Transpose",
+    "default_popup": "popup/index.html"
+  },
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
+  "default_locale": "en",
+  "description": "__MSG_appDesc__",
+  "externally_connectable": {
+    "matches": ["https://transpose.video/*"]
+  },
+  "icons": {
+    "128": "assets/icons/icon-128x128.png",
+    "16": "assets/icons/icon-16-32x32.png",
+    "32": "assets/icons/icon-32x32.png",
+    "48": "assets/icons/icon-48x48.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAj3Tsk0fnbulGv+HFRvmfBiTZXXzgzXnq1RSq7Fq+MEvY+YVcblC4YgIscAFWLw3q6EhYaa88ccUSmP65SWPSQvh0IqCvvTw7aEoMBgYFlIvBrEXZamxRkLRPhqyKIw20L9g6u/gLDFG4zQMbzt2SBksTAg+RWvY7/1dO6JWSB3hA2YHSu04JqaTMDMTK+rWVYPFiLremg445L6Mm0dtZXXQkzWSTXLfhtxIvpxMvXHxx5zeouNs0lsdVpYwfdfcxdHD275sC0sMRswZwRfig0/jyCPFcqQBLDoLdJ8ul+SEeUHGTztDKRLy/hf8nXnW4xYbuf8/cb4AMA8131TfrpwIDAQAB",
+  "manifest_version": 3,
+  "minimum_chrome_version": "123",
+  "name": "__MSG_appName__",
+  "optional_host_permissions": ["*://*/*"],
+  "optional_permissions": ["tabCapture"],
+  "permissions": ["activeTab", "scripting", "storage", "sidePanel"],
+  "short_name": "__MSG_appShortName__",
+  "update_url": "https://clients2.google.com/service/update2/crx",
+  "version": "6.4.0",
+  "web_accessible_resources": [
+    {
+      "matches": ["*://*/*"],
+      "resources": [
+        "rb.wasm",
+        "aw-tp-processor.js",
+        "aw-st-processor.js",
+        "assets/i18n/**",
+        "popup/**",
+        "sidepanel/**",
+        "assets/debug/audio-worklet-test.js"
+      ]
+    }
+  ]
+}
