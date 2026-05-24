@@ -500,16 +500,31 @@ class AudioEngine {
     console.log(`[Content] Platform adapter: ${this.currentAdapter.platform}`);
 
     // Подписываемся на перехват создания медиа-элементов (для SoundCloud и других SPA)
+    /**
+     * Проверяет, является ли медиа-элемент YouTube звуковым эффектом.
+     * YouTube создаёт <audio> для звуков навигации, поиска и т.д.
+     * Их нужно пропускать, чтобы не привязаться к ним вместо основного видео.
+     *
+     * el.src возвращает абсолютный URL (https://www.youtube.com/s/search/audio/...),
+     * поэтому проверяем и el.getAttribute('src') (оригинальный атрибут).
+     */
+    const isYouTubeSoundEffect = (el: HTMLMediaElement): boolean => {
+      if (!(el instanceof HTMLAudioElement)) return false;
+      const srcAttr = el.getAttribute('src') || '';
+      const srcProp = el.src || '';
+      return srcAttr.includes('/s/search/audio/') || srcProp.includes('/s/search/audio/');
+    };
+
     onMediaElementCreated = (el: HTMLMediaElement) => {
       if (this.mediaElement) return; // уже есть элемент
 
-      // Фильтр: на YouTube есть аудио-эффекты (звуки поиска, навигации) —
-      // они имеют src вида "/s/search/audio/failure.mp3". Пропускаем их.
-      if (el instanceof HTMLAudioElement && el.src && el.src.includes('/s/search/audio/')) {
+      // Пропускаем YouTube звуковые эффекты
+      if (isYouTubeSoundEffect(el)) {
+        console.log(`[Content] Skipping YouTube sound effect (intercepted):`, el);
         return;
       }
 
-      // Если у элемента уже есть src — подключаемся сразу
+      // Если у элемента уже есть src — подключаемся
       if (hasValidSource(el)) {
         console.log(`[Content] Intercepted media element with src:`, el);
         this.attachToMedia(el);
@@ -525,6 +540,11 @@ class AudioEngine {
         if (idx !== -1) pendingMediaElements.splice(idx, 1);
 
         if (!this.mediaElement) {
+          // Повторная проверка: YouTube звуковой эффект?
+          if (isYouTubeSoundEffect(readyEl)) {
+            console.log(`[Content] Skipping YouTube sound effect (after wait):`, readyEl.src);
+            return;
+          }
           console.log(`[Content] Media element now has src:`, readyEl);
           this.attachToMedia(readyEl);
         }
@@ -532,6 +552,16 @@ class AudioEngine {
     };
 
     this.initMediaDetection();
+
+    // Для YouTube и других платформ, где видео создаётся через Polymer
+    // (не через document.createElement), делаем дополнительный поиск
+    // с задержкой, чтобы дать странице время инициализировать плеер.
+    setTimeout(() => {
+      if (!this.mediaElement) {
+        console.log(`[Content] Delayed media search for ${this.currentAdapter.platform}...`);
+        this.findMediaElement();
+      }
+    }, 500);
   }
 
   // --- Media element detection ---
