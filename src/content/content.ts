@@ -44,6 +44,13 @@ function waitForSource(el: HTMLMediaElement, callback: (el: HTMLMediaElement) =>
     return;
   }
 
+  // Если элемент уже загружен (readyState >= HAVE_CURRENT_DATA) — подключаемся сразу
+  // YouTube использует srcObject (MediaStream) и readyState может быть > 0 даже без src
+  if (el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+    callback(el);
+    return;
+  }
+
   // Слушаем loadstart — SoundCloud устанавливает blob: URL именно в этот момент
   const onLoadStart = () => {
     el.removeEventListener('loadstart', onLoadStart);
@@ -59,13 +66,25 @@ function waitForSource(el: HTMLMediaElement, callback: (el: HTMLMediaElement) =>
   el.addEventListener('loadedmetadata', onMeta);
 
   // Таймаут на случай, если src так и не появится
-  setTimeout(() => {
-    el.removeEventListener('loadstart', onLoadStart);
-    el.removeEventListener('loadedmetadata', onMeta);
-    if (hasValidSource(el)) {
+  // Для YouTube видео может уже быть в DOM с готовым контентом — проверяем каждую секунду
+  let attempts = 0;
+  const checkInterval = setInterval(() => {
+    attempts++;
+    if (hasValidSource(el) || el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      clearInterval(checkInterval);
+      el.removeEventListener('loadstart', onLoadStart);
+      el.removeEventListener('loadedmetadata', onMeta);
       callback(el);
+    } else if (attempts >= 10) {
+      // 10 секунд прошло — сдаёмся, но всё равно пробуем подключиться
+      clearInterval(checkInterval);
+      el.removeEventListener('loadstart', onLoadStart);
+      el.removeEventListener('loadedmetadata', onMeta);
+      if (hasValidSource(el)) {
+        callback(el);
+      }
     }
-  }, 10000);
+  }, 1000);
 }
 
 (function patchCreateElement(): void {
