@@ -8,6 +8,98 @@ import { isBlockedUrl } from '../shared/types';
 
 const INIT_FLAG = '___tp_isInitialized';
 
+// ============================================================
+// Monkey-patch для перехвата создания медиа-элементов
+// SoundCloud и другие SPA создают <audio> через createElement,
+// но НЕ добавляют их в DOM. MutationObserver не может их найти.
+// Оригинальный Transpose использует такой же подход.
+// ============================================================
+
+let onMediaElementCreated: ((el: HTMLMediaElement) => void) | null = null;
+
+/**
+ * Очередь перехваченных медиа-элементов, которые ещё не имеют src.
+ * SoundCloud создаёт <audio> через createElement с src=NONE,
+ * а затем устанавливает blob: URL через некоторое время.
+ * Мы сохраняем такие элементы и ждём появления src.
+ */
+const pendingMediaElements: HTMLMediaElement[] = [];
+
+/**
+ * Проверяет, есть ли у элемента валидный источник (src или srcObject).
+ * Для SoundCloud blob: URL считается валидным.
+ */
+function hasValidSource(el: HTMLMediaElement): boolean {
+  return !!(el.src || el.currentSrc || el.srcObject);
+}
+
+/**
+ * Устанавливает слушатели на элемент, чтобы поймать момент появления src.
+ * SoundCloud устанавливает src через loadstart после создания элемента.
+ */
+function waitForSource(el: HTMLMediaElement, callback: (el: HTMLMediaElement) => void): void {
+  // Если src уже есть — вызываем сразу
+  if (hasValidSource(el)) {
+    callback(el);
+    return;
+  }
+
+  // Слушаем loadstart — SoundCloud устанавливает blob: URL именно в этот момент
+  const onLoadStart = () => {
+    el.removeEventListener('loadstart', onLoadStart);
+    el.removeEventListener('loadedmetadata', onMeta);
+    callback(el);
+  };
+  const onMeta = () => {
+    el.removeEventListener('loadstart', onLoadStart);
+    el.removeEventListener('loadedmetadata', onMeta);
+    callback(el);
+  };
+  el.addEventListener('loadstart', onLoadStart);
+  el.addEventListener('loadedmetadata', onMeta);
+
+  // Таймаут на случай, если src так и не появится
+  setTimeout(() => {
+    el.removeEventListener('loadstart', onLoadStart);
+    el.removeEventListener('loadedmetadata', onMeta);
+    if (hasValidSource(el)) {
+      callback(el);
+    }
+  }, 10000);
+}
+
+(function patchCreateElement(): void {
+  const originalCreateElement = document.createElement.bind(document);
+  const originalAudio = window.Audio;
+
+  // Перехватываем document.createElement('audio') и document.createElement('video')
+  document.createElement = function <T extends HTMLElement>(
+    tagName: string,
+    options?: ElementCreationOptions,
+  ): T {
+    const el = originalCreateElement(tagName, options) as T;
+    if ((tagName === 'audio' || tagName === 'video') && onMediaElementCreated) {
+      onMediaElementCreated(el as unknown as HTMLMediaElement);
+    }
+    return el;
+  } as typeof document.createElement;
+
+  // Перехватываем new Audio()
+  if (originalAudio) {
+    class PatchedAudio extends originalAudio {
+      constructor(src?: string) {
+        super(src);
+        if (onMediaElementCreated) {
+          onMediaElementCreated(this);
+        }
+      }
+    }
+    // Сохраняем ссылку на оригинальный Audio для возможного восстановления
+    (PatchedAudio as any).__original__ = originalAudio;
+    window.Audio = PatchedAudio as any;
+  }
+})();
+
 // Error logging helper
 function logError(scope: string, event: string, data?: unknown): void {
   console.error(`[${scope}] ${event}`, data ?? '');
@@ -66,6 +158,221 @@ function isSecurityError(error: unknown, url: string): boolean {
 }
 
 // ============================================================
+// Platform Adapter System
+// ============================================================
+
+/**
+ * Base adapter interface.
+ * Каждый адаптер отвечает за поиск медиа-элементов на конкретной платформе.
+ */
+interface PlatformAdapter {
+  readonly platform: string;
+  /** Проверяет, подходит ли этот адаптер для текущего URL */
+  canHandle(url: string): boolean;
+  /** Находит подходящий медиа-элемент на странице */
+  findMedia(): HTMLMediaElement | null;
+  /** Проверяет, есть ли на странице воспроизводимый медиа-контент */
+  containsPlayableMedia(): boolean;
+}
+
+/**
+ * Адаптер по умолчанию — ищет любые <video> и <audio> элементы.
+ * Использует систему скоринга для выбора наилучшего элемента.
+ */
+class DefaultAdapter implements PlatformAdapter {
+  readonly platform = 'HTML';
+
+  canHandle(_url: string): boolean {
+    return true; // fallback — подходит для любого сайта
+  }
+
+  findMedia(): HTMLMediaElement | null {
+    const videos = document.querySelectorAll('video');
+    const audios = document.querySelectorAll('audio');
+    const allMedia = [...videos, ...audios] as HTMLMediaElement[];
+
+    if (allMedia.length === 0) return null;
+
+    let bestScore = -1;
+    let bestElement: HTMLMediaElement | null = null;
+
+    for (const el of allMedia) {
+      const score = this.scoreMediaElement(el);
+      if (score > bestScore) {
+        bestScore = score;
+        bestElement = el;
+      }
+    }
+
+    return bestElement;
+  }
+
+  containsPlayableMedia(): boolean {
+    return !!document.querySelector('video, audio');
+  }
+
+  private scoreMediaElement(el: HTMLMediaElement): number {
+    let score = 0;
+
+    // Prefer elements that are already playing
+    if (!el.paused) score += 100;
+    if (el.currentTime > 0) score += 50;
+
+    // Prefer elements with audio
+    if (!el.muted) score += 30;
+    if (el.volume > 0) score += 20;
+
+    // Prefer larger elements (video over audio)
+    if (el instanceof HTMLVideoElement) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 200 && rect.height > 100) score += 40;
+      if (rect.width > 400) score += 30;
+      if (rect.top < window.innerHeight && rect.bottom > 0) score += 20;
+    }
+
+    // Prefer elements with duration
+    if (el.duration > 0 && !isNaN(el.duration)) score += 10;
+
+    // Prefer elements that have loaded data
+    if (el.readyState >= 2) score += 15;
+
+    // YouTube specific: prefer the main video (not ads)
+    if (el.classList.contains('video-stream') || el.classList.contains('html5-main-video')) {
+      score += 200;
+    }
+
+    return score;
+  }
+}
+
+/**
+ * SoundCloud adapter.
+ * SoundCloud использует кастомный плеер с элементами <audio>,
+ * которые могут быть созданы динамически через JavaScript.
+ * Оригинальный Transpose проверяет наличие .playControls.
+ */
+class SoundCloudAdapter implements PlatformAdapter {
+  readonly platform = 'SoundCloud';
+
+  canHandle(url: string): boolean {
+    return url.includes('soundcloud.com');
+  }
+
+  findMedia(): HTMLMediaElement | null {
+    // Сначала пробуем найти audio элементы внутри плеера SoundCloud
+    const playerEl = document.querySelector('.playControls');
+    if (playerEl) {
+      // Ищем audio внутри плеера или рядом с ним
+      const audioInPlayer = playerEl.querySelector('audio');
+      if (audioInPlayer) return audioInPlayer;
+    }
+
+    // Ищем все audio элементы на странице
+    const audios = document.querySelectorAll('audio');
+    if (audios.length > 0) {
+      // SoundCloud использует audio с blob: URL или медиа-стримами
+      // Выбираем audio с наибольшим duration (основной трек)
+      let best: HTMLAudioElement | null = null;
+      let bestDuration = 0;
+      for (const audio of audios) {
+        // Пропускаем пустые элементы
+        if (!audio.src && !audio.srcObject) continue;
+        const d = audio.duration || 0;
+        if (d > bestDuration) {
+          bestDuration = d;
+          best = audio;
+        }
+      }
+      if (best) return best;
+
+      // Fallback: любой audio элемент с src или srcObject
+      for (const audio of audios) {
+        if (audio.src || audio.srcObject) return audio as HTMLAudioElement;
+      }
+      // Самый последний audio (часто самый актуальный)
+      return audios[audios.length - 1] as HTMLAudioElement;
+    }
+
+    return null;
+  }
+
+  containsPlayableMedia(): boolean {
+    return !!document.querySelector('.playControls') || !!document.querySelector('audio');
+  }
+}
+
+/**
+ * Адаптер для junodownload.com и похожих сайтов.
+ * Эти сайты часто используют стандартные HTML5 audio/video элементы
+ * или встраивают плеер через iframe.
+ */
+class JunoDownloadAdapter implements PlatformAdapter {
+  readonly platform = 'JunoDownload';
+
+  canHandle(url: string): boolean {
+    return url.includes('junodownload.com') || url.includes('juno.co.uk');
+  }
+
+  findMedia(): HTMLMediaElement | null {
+    // Ищем audio/video элементы на странице
+    const audios = document.querySelectorAll('audio');
+    const videos = document.querySelectorAll('video');
+    const allMedia = [...audios, ...videos] as HTMLMediaElement[];
+
+    if (allMedia.length === 0) return null;
+
+    // Выбираем элемент с наибольшим duration (основной трек)
+    let best: HTMLMediaElement | null = null;
+    let bestDuration = 0;
+    for (const el of allMedia) {
+      if (el.src && !el.src.includes('blob:')) {
+        const d = el.duration || 0;
+        if (d > bestDuration) {
+          bestDuration = d;
+          best = el;
+        }
+      }
+    }
+
+    return best || allMedia[0];
+  }
+
+  containsPlayableMedia(): boolean {
+    return !!document.querySelector('audio, video');
+  }
+}
+
+/**
+ * Адаптер менеджер — выбирает подходящий адаптер для текущего URL.
+ * Порядок важен: специфичные адаптеры идут первыми, DefaultAdapter — последним.
+ */
+class AdapterManager {
+  private adapters: PlatformAdapter[];
+
+  constructor() {
+    this.adapters = [
+      new SoundCloudAdapter(),
+      new JunoDownloadAdapter(),
+      new DefaultAdapter(), // должен быть последним (fallback)
+    ];
+  }
+
+  getAdapter(): PlatformAdapter {
+    const url = window.location.href;
+    for (const adapter of this.adapters) {
+      if (adapter.canHandle(url)) {
+        return adapter;
+      }
+    }
+    return this.adapters[this.adapters.length - 1];
+  }
+
+  getAllAdapters(): PlatformAdapter[] {
+    return this.adapters;
+  }
+}
+
+// ============================================================
 // AudioEngine — manages audio processing for media elements
 // ============================================================
 
@@ -104,8 +411,40 @@ class AudioEngine {
   private isDestroyed = false;
   private findMediaInterval: ReturnType<typeof setInterval> | null = null;
   private mutationObserver: MutationObserver | null = null;
+  private adapterManager: AdapterManager;
+  private currentAdapter: PlatformAdapter;
 
   constructor() {
+    this.adapterManager = new AdapterManager();
+    this.currentAdapter = this.adapterManager.getAdapter();
+    console.log(`[Content] Platform adapter: ${this.currentAdapter.platform}`);
+
+    // Подписываемся на перехват создания медиа-элементов (для SoundCloud и других SPA)
+    onMediaElementCreated = (el: HTMLMediaElement) => {
+      if (this.mediaElement) return; // уже есть элемент
+
+      // Если у элемента уже есть src — подключаемся сразу
+      if (hasValidSource(el)) {
+        console.log(`[Content] Intercepted media element with src:`, el);
+        this.attachToMedia(el);
+        return;
+      }
+
+      // Иначе — ставим в очередь и ждём появления src
+      console.log(`[Content] Queuing media element (no src yet):`, el);
+      pendingMediaElements.push(el);
+      waitForSource(el, (readyEl) => {
+        // Удаляем из очереди
+        const idx = pendingMediaElements.indexOf(readyEl);
+        if (idx !== -1) pendingMediaElements.splice(idx, 1);
+
+        if (!this.mediaElement) {
+          console.log(`[Content] Media element now has src:`, readyEl);
+          this.attachToMedia(readyEl);
+        }
+      });
+    };
+
     this.initMediaDetection();
   }
 
@@ -121,10 +460,31 @@ class AudioEngine {
         this.findMediaElement();
       }
     });
-    this.mutationObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
+
+    // Некоторые SPA сайты (SoundCloud) могут загружаться до появления document.body
+    const startObserver = () => {
+      if (document.body) {
+        this.mutationObserver?.observe(document.body, {
+          childList: true,
+          subtree: true,
+        });
+      } else {
+        // Если body ещё нет, ждём DOMContentLoaded
+        document.addEventListener(
+          'DOMContentLoaded',
+          () => {
+            if (document.body && this.mutationObserver) {
+              this.mutationObserver.observe(document.body, {
+                childList: true,
+                subtree: true,
+              });
+            }
+          },
+          { once: true },
+        );
+      }
+    };
+    startObserver();
 
     // Periodic check for media elements (for SPA navigation)
     this.findMediaInterval = setInterval(() => {
@@ -135,61 +495,24 @@ class AudioEngine {
   }
 
   private findMediaElement(): void {
-    // Look for video elements first, then audio elements
-    const videos = document.querySelectorAll('video');
-    const audios = document.querySelectorAll('audio');
-
-    // Score elements by likelihood of being the "main" media
-    let bestScore = -1;
-    let bestElement: HTMLMediaElement | null = null;
-
-    const allMedia = [...videos, ...audios] as HTMLMediaElement[];
-
-    for (const el of allMedia) {
-      const score = this.scoreMediaElement(el);
-      if (score > bestScore) {
-        bestScore = score;
-        bestElement = el;
+    // Сначала проверяем очередь перехваченных элементов — возможно, у них уже появился src
+    for (let i = pendingMediaElements.length - 1; i >= 0; i--) {
+      const pending = pendingMediaElements[i];
+      if (hasValidSource(pending)) {
+        pendingMediaElements.splice(i, 1);
+        console.log(`[Content] Pending media element now has src:`, pending);
+        this.attachToMedia(pending);
+        return;
       }
     }
 
-    if (bestElement && bestElement !== this.mediaElement) {
-      this.attachToMedia(bestElement);
+    // Используем текущий адаптер для поиска медиа-элемента
+    const element = this.currentAdapter.findMedia();
+
+    if (element && element !== this.mediaElement) {
+      console.log(`[Content] Found media via ${this.currentAdapter.platform} adapter:`, element);
+      this.attachToMedia(element);
     }
-  }
-
-  private scoreMediaElement(el: HTMLMediaElement): number {
-    let score = 0;
-
-    // Prefer elements that are already playing
-    if (!el.paused) score += 100;
-    if (el.currentTime > 0) score += 50;
-
-    // Prefer elements with audio
-    if (!el.muted) score += 30;
-    if (el.volume > 0) score += 20;
-
-    // Prefer larger elements (video over audio)
-    if (el instanceof HTMLVideoElement) {
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 200 && rect.height > 100) score += 40;
-      if (rect.width > 400) score += 30;
-      // Visible in viewport
-      if (rect.top < window.innerHeight && rect.bottom > 0) score += 20;
-    }
-
-    // Prefer elements with duration
-    if (el.duration > 0 && !isNaN(el.duration)) score += 10;
-
-    // Prefer elements that have loaded data
-    if (el.readyState >= 2) score += 15;
-
-    // YouTube specific: prefer the main video (not ads)
-    if (el.classList.contains('video-stream') || el.classList.contains('html5-main-video')) {
-      score += 200;
-    }
-
-    return score;
   }
 
   private attachToMedia(element: HTMLMediaElement): void {
@@ -491,6 +814,9 @@ class AudioEngine {
     this.stWorkletNode = null;
     this.gainNode = null;
     this.workletInitPromise = null;
+
+    // Сбрасываем перехват создания медиа-элементов
+    onMediaElementCreated = null;
   }
 }
 
@@ -549,13 +875,24 @@ window.addEventListener('transpose-dispatch-controls-to-content', ((event: Custo
   // Handle 'transport' commands
   if (command === 'transport') {
     if (params.action === 'play') {
-      document.querySelectorAll('video, audio').forEach((el) => {
-        (el as HTMLMediaElement).play().catch(() => {});
-      });
+      // Используем адаптер для поиска медиа, либо все video/audio
+      const mediaEl = audioEngine ? (audioEngine as any).mediaElement : null;
+      if (mediaEl) {
+        (mediaEl as HTMLMediaElement).play().catch(() => {});
+      } else {
+        document.querySelectorAll('video, audio').forEach((el) => {
+          (el as HTMLMediaElement).play().catch(() => {});
+        });
+      }
     } else if (params.action === 'pause') {
-      document.querySelectorAll('video, audio').forEach((el) => {
-        (el as HTMLMediaElement).pause();
-      });
+      const mediaEl = audioEngine ? (audioEngine as any).mediaElement : null;
+      if (mediaEl) {
+        (mediaEl as HTMLMediaElement).pause();
+      } else {
+        document.querySelectorAll('video, audio').forEach((el) => {
+          (el as HTMLMediaElement).pause();
+        });
+      }
     }
   }
 
