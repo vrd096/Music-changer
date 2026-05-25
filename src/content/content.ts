@@ -96,7 +96,7 @@ function watchBeatportElement(el: HTMLMediaElement): void {
     el.crossOrigin = 'anonymous';
   } catch {}
 
-  // Слушатели play/playing устанавливаем ДО обнаружения URL,
+  // Слушатели play/playing/pause устанавливаем ДО обнаружения URL,
   // чтобы успеть перехватить воспроизведение.
   // Когда Vibes Fast начинает воспроизведение, он вызывает el.play().
   // Наш слушатель срабатывает, и мы запускаем fetch+decodeAudioData.
@@ -112,8 +112,17 @@ function watchBeatportElement(el: HTMLMediaElement): void {
       engine.prepareBeatportAudio(src);
     }
   };
+  const onPause = () => {
+    if (engine) {
+      console.log('[Content] Beatport pause detected');
+      engine.pauseBeatportPlayback();
+      // Сбрасываем флаг, чтобы при следующем play можно было снова запустить трек
+      _preparingBeatport = false;
+    }
+  };
   el.addEventListener('play', onPlay);
   el.addEventListener('playing', onPlay);
+  el.addEventListener('pause', onPause);
 
   // Ждём появления src, затем привязываем элемент
   const interval = setInterval(() => {
