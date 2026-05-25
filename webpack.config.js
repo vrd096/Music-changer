@@ -123,6 +123,10 @@ export default {
           to: dist(''),
         },
         {
+          from: src('rules.json'),
+          to: dist('rules.json'),
+        },
+        {
           from: src('rb.wasm'),
           to: dist('rb.wasm'),
           noErrorOnMissing: true,

@@ -33,7 +33,16 @@
   "name": "__MSG_appName__",
   "optional_host_permissions": ["*://*/*"],
   "optional_permissions": ["tabCapture"],
-  "permissions": ["activeTab", "scripting", "storage", "sidePanel"],
+  "permissions": ["activeTab", "scripting", "storage", "sidePanel", "declarativeNetRequest"],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_1",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
   "short_name": "__MSG_appShortName__",
   "update_url": "https://clients2.google.com/service/update2/crx",
   "version": "6.4.0",
