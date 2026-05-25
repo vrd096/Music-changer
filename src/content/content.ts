@@ -1295,9 +1295,17 @@ class AudioEngine {
    * CORS-заголовки добавляются через declarativeNetRequest (rules.json).
    */
   public prepareBeatportAudio(url: string): void {
-    if (this._lastKnownSrc === url && this._isBufferPlaying) {
-      console.log('[Content] Beatport: already playing this URL, skipping');
+    // Если это тот же URL и буфер уже загружен — просто возобновляем воспроизведение
+    // с сохранённой позиции (offset), не перезапрашивая fetch.
+    if (this._lastKnownSrc === url && this._beatportAudioBuffer) {
+      console.log('[Content] Beatport: resuming playback from offset:', this._beatportStartOffset);
+      this.startBeatportPlayback();
       return;
+    }
+
+    // Если это новый URL — сбрасываем offset, так как начинаем новый трек
+    if (this._lastKnownSrc !== url) {
+      this._beatportStartOffset = 0;
     }
     this._lastKnownSrc = url;
 
@@ -1401,11 +1409,24 @@ class AudioEngine {
     // уже управляет основным аудио-графом, а мы создаём параллельный поток)
     source.connect(ctx.destination);
 
-    // Запоминаем время старта для возможной паузы
+    // Запоминаем время старта для возможной паузы.
+    // Используем сохранённый _beatportStartOffset, чтобы при возобновлении
+    // после паузы трек продолжился с того же места, а не с начала.
     this._beatportStartTime = ctx.currentTime;
-    this._beatportStartOffset = 0;
 
-    source.start(0);
+    const offset = Math.max(0, this._beatportStartOffset);
+    const duration = this._beatportAudioBuffer.duration;
+    // Если offset превышает длительность трека, начинаем с начала
+    const startOffset = offset >= duration ? 0 : offset;
+
+    console.log(
+      '[Content] Beatport: starting playback at offset:',
+      startOffset,
+      '/ duration:',
+      duration,
+    );
+
+    source.start(0, startOffset);
     this.bufferSource = source;
     this._isBufferPlaying = true;
 
