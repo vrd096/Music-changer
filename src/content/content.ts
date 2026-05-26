@@ -103,12 +103,21 @@ function watchBeatportElement(el: HTMLMediaElement): void {
    * 1. Сбросить _preparingBeatport, чтобы новый play сработал
    * 2. Остановить старый буфер
    * 3. Сбросить закешированный буфер в AudioEngine
+   * 4. Снова заглушить элемент, чтобы не было "заикания" пока
+   *    загружается новый трек
    */
   const onTrackChange = () => {
     const src = el.src || el.currentSrc || el.getAttribute('src') || '';
     if (src.includes('geo-samples.beatport.com')) {
       console.log('[Content] Beatport: track change detected, src:', src);
       _preparingBeatport = false;
+      // Глушим элемент сразу при смене трека, чтобы новый трек
+      // не начал играть через нативный аудио-выход до того, как
+      // наш AudioBufferSourceNode будет готов
+      try {
+        el.volume = 0;
+        el.muted = true;
+      } catch {}
       if (engine) {
         engine.resetBeatportState();
       }
@@ -798,6 +807,14 @@ class AudioEngine {
         // 2. Воспроизводим аудио через fetch + decodeAudioData + AudioBufferSourceNode
         //    на раннем AudioContext (созданном в IIFE до Vibes Fast)
         // 3. Контролируем скорость через playbackRate на AudioBufferSourceNode
+        //
+        // Глушим элемент СРАЗУ при создании, чтобы предотвратить "заикание"
+        // (доли секунды звука из оригинального элемента до того, как наш
+        // AudioBufferSourceNode будет готов к воспроизведению).
+        try {
+          el.volume = 0;
+          el.muted = true;
+        } catch {}
         this.hijackPlaybackRate(el, this.state.speed);
         watchBeatportElement(el);
         return;
