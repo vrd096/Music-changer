@@ -87,6 +87,7 @@ function getAudioEngine(): AudioEngine | null {
  */
 function watchBeatportElement(el: HTMLMediaElement): void {
   let urlDetected = false;
+  let _preparingBeatport = false;
   const engine = getAudioEngine();
 
   // Устанавливаем crossOrigin = "anonymous" на элементе ДО того,
@@ -96,6 +97,24 @@ function watchBeatportElement(el: HTMLMediaElement): void {
     el.crossOrigin = 'anonymous';
   } catch {}
 
+  /**
+   * Сбрасывает состояние при смене трека (next/prev на Beatport).
+   * Когда src элемента меняется на новый URL, нам нужно:
+   * 1. Сбросить _preparingBeatport, чтобы новый play сработал
+   * 2. Остановить старый буфер
+   * 3. Сбросить закешированный буфер в AudioEngine
+   */
+  const onTrackChange = () => {
+    const src = el.src || el.currentSrc || el.getAttribute('src') || '';
+    if (src.includes('geo-samples.beatport.com')) {
+      console.log('[Content] Beatport: track change detected, src:', src);
+      _preparingBeatport = false;
+      if (engine) {
+        engine.resetBeatportState();
+      }
+    }
+  };
+
   // Слушатели play/playing/pause устанавливаем ДО обнаружения URL,
   // чтобы успеть перехватить воспроизведение.
   // Когда Vibes Fast начинает воспроизведение, он вызывает el.play().
@@ -103,7 +122,6 @@ function watchBeatportElement(el: HTMLMediaElement): void {
   //
   // ВАЖНО: используем флаг _preparingBeatport, чтобы избежать двойного
   // вызова prepareBeatportAudio (play + playing срабатывают оба).
-  let _preparingBeatport = false;
   const onPlay = () => {
     const src = el.src || el.currentSrc || el.getAttribute('src') || '';
     if (src.includes('geo-samples.beatport.com') && engine && !_preparingBeatport) {
@@ -136,6 +154,11 @@ function watchBeatportElement(el: HTMLMediaElement): void {
   el.addEventListener('playing', onPlay);
   el.addEventListener('pause', onPause);
   el.addEventListener('seeked', onSeeked);
+
+  // Слушаем loadstart для обнаружения смены трека.
+  // Когда Beatport переключает трек (next/prev), src элемента меняется,
+  // и браузер генерирует loadstart.
+  el.addEventListener('loadstart', onTrackChange);
 
   // Ждём появления src, затем привязываем элемент
   const interval = setInterval(() => {
@@ -1317,9 +1340,15 @@ class AudioEngine {
       return;
     }
 
-    // Если это новый URL — сбрасываем offset, так как начинаем новый трек
+    // Если это новый URL — сбрасываем offset и останавливаем старый буфер,
+    // так как начинаем новый трек
     if (this._lastKnownSrc !== url) {
+      console.log('[Content] Beatport: new track URL detected, stopping old buffer');
       this._beatportStartOffset = 0;
+      // Останавливаем старый буфер немедленно, чтобы старый трек не продолжал играть
+      // пока загружается новый
+      this.stopBeatportPlayback();
+      this._beatportAudioBuffer = null;
     }
     this._lastKnownSrc = url;
 
@@ -1520,6 +1549,21 @@ class AudioEngine {
    */
   public isBeatportBufferPlaying(): boolean {
     return this._isBufferPlaying;
+  }
+
+  /**
+   * Сбрасывает состояние Beatport при смене трека (next/prev).
+   * Останавливает текущее воспроизведение и очищает закешированный буфер,
+   * чтобы при новом play загрузился актуальный трек.
+   */
+  public resetBeatportState(): void {
+    console.log('[Content] Beatport: resetting state for track change');
+    this.stopBeatportPlayback();
+    this._beatportAudioBuffer = null;
+    this._lastKnownSrc = '';
+    this._beatportStartOffset = 0;
+    this._beatportStartTime = 0;
+    this._isBeatportSeeking = false;
   }
 
   /**
