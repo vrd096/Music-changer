@@ -120,9 +120,22 @@ function watchBeatportElement(el: HTMLMediaElement): void {
       _preparingBeatport = false;
     }
   };
+
+  // Слушатель seeked — когда пользователь кликает на прогресс-бар Beatport,
+  // оригинальный элемент audio меняет currentTime.
+  // Нам нужно пересоздать AudioBufferSourceNode с новой позиции.
+  const onSeeked = () => {
+    if (engine && engine.isBeatportBufferPlaying()) {
+      const newTime = el.currentTime;
+      console.log('[Content] Beatport seeked detected, new time:', newTime);
+      engine.seekBeatportPlayback(newTime);
+    }
+  };
+
   el.addEventListener('play', onPlay);
   el.addEventListener('playing', onPlay);
   el.addEventListener('pause', onPause);
+  el.addEventListener('seeked', onSeeked);
 
   // Ждём появления src, затем привязываем элемент
   const interval = setInterval(() => {
@@ -724,6 +737,7 @@ class AudioEngine {
   private _beatportStartTime: number = 0;
   private _lastKnownSrc: string = '';
   private _isBufferPlaying: boolean = false;
+  private _isBeatportSeeking: boolean = false;
 
   constructor() {
     this.adapterManager = new AdapterManager();
@@ -1435,6 +1449,12 @@ class AudioEngine {
     // Обработка окончания воспроизведения
     source.onended = () => {
       console.log('[Content] Beatport: playback ended');
+      // Если мы в процессе seek — не сбрасываем флаги,
+      // так как новый источник уже создан и управляется отдельно
+      if (this._isBeatportSeeking) {
+        console.log('[Content] Beatport: ignoring ended during seek');
+        return;
+      }
       this._isBufferPlaying = false;
       this.bufferSource = null;
     };
@@ -1442,6 +1462,11 @@ class AudioEngine {
 
   private stopBeatportPlayback(): void {
     if (this.bufferSource) {
+      // ВАЖНО: очищаем onended ДО вызова stop(), чтобы prevent
+      // асинхронного срабатывания onended после того, как мы уже
+      // создали новый источник (при seek). Иначе старый onended
+      // сбросит _isBufferPlaying и bufferSource нового источника.
+      this.bufferSource.onended = null;
       try {
         this.bufferSource.stop();
         this.bufferSource.disconnect();
@@ -1462,6 +1487,39 @@ class AudioEngine {
       this.stopBeatportPlayback();
       console.log('[Content] Beatport: playback paused');
     }
+  }
+
+  /**
+   * Обрабатывает seek на Beatport — пересоздаёт AudioBufferSourceNode
+   * с новой позиции, когда пользователь кликает на прогресс-бар.
+   */
+  public seekBeatportPlayback(newTime: number): void {
+    if (!this._beatportAudioBuffer) {
+      console.warn('[Content] Beatport: cannot seek, no audio buffer loaded');
+      return;
+    }
+
+    // Обновляем offset до новой позиции
+    this._beatportStartOffset = Math.max(0, Math.min(newTime, this._beatportAudioBuffer.duration));
+
+    // Если буфер сейчас играет — пересоздаём источник с новой позиции
+    if (this._isBufferPlaying) {
+      console.log('[Content] Beatport: seeking to:', this._beatportStartOffset);
+      // Устанавливаем флаг seek, чтобы onended от старого источника
+      // не сбросил флаги нового источника
+      this._isBeatportSeeking = true;
+      this.startBeatportPlayback();
+      this._isBeatportSeeking = false;
+    }
+    // Если буфер на паузе — просто обновляем offset,
+    // при следующем play воспроизведение начнётся с новой позиции
+  }
+
+  /**
+   * Возвращает true, если Beatport буфер в данный момент воспроизводится.
+   */
+  public isBeatportBufferPlaying(): boolean {
+    return this._isBufferPlaying;
   }
 
   /**
