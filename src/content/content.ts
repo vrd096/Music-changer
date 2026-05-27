@@ -87,6 +87,9 @@ function getAudioEngine(): AudioEngine | null {
  */
 function watchBeatportElement(el: HTMLMediaElement): void {
   let urlDetected = false;
+  let _preparingBeatport = false;
+  let _pendingPlay = false; // true, если пользователь нажал Play до того, как появился реальный URL
+  let _pollForUrl: (() => void) | null = null; // функция polling'а для ожидания реального URL
   const engine = getAudioEngine();
 
   // Устанавливаем crossOrigin = "anonymous" на элементе ДО того,
@@ -96,24 +99,188 @@ function watchBeatportElement(el: HTMLMediaElement): void {
     el.crossOrigin = 'anonymous';
   } catch {}
 
-  // Слушатели play/playing устанавливаем ДО обнаружения URL,
+  // ============================================================
+  // Перехватываем el.play(), чтобы предотвратить NotSupportedError,
+  // когда Beatport вызывает play() на элементе с search URL (не аудио).
+  //
+  // Проблема: Beatport сначала устанавливает src = search?q=...,
+  // затем вызывает el.play(). Браузер выбрасывает NotSupportedError,
+  // и Beatport больше не вызывает play() повторно, когда появляется
+  // реальный аудио-URL.
+  //
+  // Решение: перехватываем play(). Если src невалидный — НЕ вызываем
+  // оригинальный play() (чтобы избежать ошибки), а просто запоминаем,
+  // что play был запрошен. Когда реальный URL появится — мы сами
+  // вызовем el.play() и запустим prepareBeatportAudio.
+  // ============================================================
+  const originalPlay = el.play.bind(el);
+  let _playRequested = false;
+
+  el.play = function (): Promise<void> {
+    const src = el.src || el.currentSrc || el.getAttribute('src') || '';
+    if (src.includes('geo-samples.beatport.com')) {
+      // Реальный URL уже есть — вызываем оригинальный play
+      return originalPlay();
+    }
+    // URL ещё невалидный (search?q=...) — НЕ вызываем оригинальный play,
+    // чтобы избежать NotSupportedError. Просто запоминаем, что play был запрошен.
+    _playRequested = true;
+    _pendingPlay = true;
+    console.log('[Content] Beatport: play() intercepted, src not ready yet, deferring play');
+    // Возвращаем resolved promise, чтобы Beatport не ждал reject
+    return Promise.resolve();
+  };
+
+  /**
+   * Сбрасывает состояние при смене трека (next/prev на Beatport).
+   * Когда src элемента меняется на новый URL, нам нужно:
+   * 1. Сбросить _preparingBeatport, чтобы новый play сработал
+   * 2. Остановить старый буфер
+   * 3. Сбросить закешированный буфер в AudioEngine
+   * 4. Снова заглушить элемент, чтобы не было "заикания" пока
+   *    загружается новый трек
+   */
+  const onTrackChange = () => {
+    const src = el.src || el.currentSrc || el.getAttribute('src') || '';
+    if (src.includes('geo-samples.beatport.com')) {
+      console.log('[Content] Beatport: track change detected, src:', src);
+      _preparingBeatport = false;
+      // Глушим элемент сразу при смене трека, чтобы новый трек
+      // не начал играть через нативный аудио-выход до того, как
+      // наш AudioBufferSourceNode будет готов
+      try {
+        el.volume = 0;
+        el.muted = true;
+      } catch {}
+      if (engine) {
+        engine.resetBeatportState();
+      }
+      // Если пользователь уже нажал Play (до появления реального URL) —
+      // запускаем подготовку аудио немедленно.
+      if (_pendingPlay && engine) {
+        _pendingPlay = false;
+        _preparingBeatport = true;
+        console.log(
+          '[Content] Beatport: pending play detected in trackChange, starting audio preparation:',
+          src,
+        );
+        engine.prepareBeatportAudio(src);
+      }
+    }
+  };
+
+  /**
+   * Запускает polling для ожидания появления реального аудио-URL
+   * на элементе. Используется когда пользователь нажал Play, но
+   * src элемента ещё содержит search URL (не аудио).
+   *
+   * Как только URL обнаружен — запускаем prepareBeatportAudio.
+   */
+  const startUrlPolling = () => {
+    // Если уже запущен polling — не дублируем
+    if (_pollForUrl) return;
+
+    let attempts = 0;
+    const maxAttempts = 50; // 50 * 200ms = 10 секунд максимум
+
+    const check = () => {
+      attempts++;
+      const src = el.src || el.currentSrc || el.getAttribute('src') || '';
+      if (src.includes('geo-samples.beatport.com')) {
+        // URL появился! Запускаем подготовку аудио
+        _pollForUrl = null;
+        _pendingPlay = false;
+        _preparingBeatport = true;
+        console.log(
+          '[Content] Beatport: URL detected via polling, starting audio preparation:',
+          src,
+        );
+        if (engine) {
+          engine.prepareBeatportAudio(src);
+        }
+        return;
+      }
+      if (attempts >= maxAttempts) {
+        // Таймаут — прекращаем polling
+        _pollForUrl = null;
+        console.log('[Content] Beatport: URL polling timeout, giving up');
+        return;
+      }
+      // Продолжаем polling
+      _pollForUrl = setTimeout(check, 200) as unknown as () => void;
+    };
+
+    _pollForUrl = setTimeout(check, 200) as unknown as () => void;
+  };
+
+  /**
+   * Останавливает polling, если он был запущен.
+   */
+  const stopUrlPolling = () => {
+    if (_pollForUrl) {
+      clearTimeout(_pollForUrl as unknown as number);
+      _pollForUrl = null;
+    }
+  };
+
+  // Слушатели play/playing/pause устанавливаем ДО обнаружения URL,
   // чтобы успеть перехватить воспроизведение.
   // Когда Vibes Fast начинает воспроизведение, он вызывает el.play().
   // Наш слушатель срабатывает, и мы запускаем fetch+decodeAudioData.
   //
   // ВАЖНО: используем флаг _preparingBeatport, чтобы избежать двойного
   // вызова prepareBeatportAudio (play + playing срабатывают оба).
-  let _preparingBeatport = false;
   const onPlay = () => {
     const src = el.src || el.currentSrc || el.getAttribute('src') || '';
-    if (src.includes('geo-samples.beatport.com') && engine && !_preparingBeatport) {
-      _preparingBeatport = true;
-      console.log('[Content] Beatport play detected, preparing audio:', src);
-      engine.prepareBeatportAudio(src);
+    if (engine && !_preparingBeatport) {
+      if (src.includes('geo-samples.beatport.com')) {
+        // Реальный URL уже есть — запускаем подготовку аудио
+        _preparingBeatport = true;
+        _pendingPlay = false;
+        stopUrlPolling();
+        console.log('[Content] Beatport play detected, preparing audio:', src);
+        engine.prepareBeatportAudio(src);
+      } else {
+        // Пользователь нажал Play, но реальный URL ещё не появился
+        // (src может быть search?q=...). Запускаем polling, который
+        // будет ждать появления geo-samples.beatport.com на элементе.
+        _pendingPlay = true;
+        console.log('[Content] Beatport play detected but no real URL yet, starting URL polling');
+        startUrlPolling();
+      }
     }
   };
+  const onPause = () => {
+    if (engine) {
+      console.log('[Content] Beatport pause detected');
+      engine.pauseBeatportPlayback();
+      // Сбрасываем флаг, чтобы при следующем play можно было снова запустить трек
+      _preparingBeatport = false;
+      // Останавливаем polling, если он был активен
+      stopUrlPolling();
+    }
+  };
+
+  // Слушатель seeked — когда пользователь кликает на прогресс-бар Beatport,
+  // оригинальный элемент audio меняет currentTime.
+  // Нам нужно пересоздать AudioBufferSourceNode с новой позиции.
+  const onSeeked = () => {
+    if (engine && engine.isBeatportBufferPlaying()) {
+      const newTime = el.currentTime;
+      console.log('[Content] Beatport seeked detected, new time:', newTime);
+      engine.seekBeatportPlayback(newTime);
+    }
+  };
+
   el.addEventListener('play', onPlay);
   el.addEventListener('playing', onPlay);
+  el.addEventListener('pause', onPause);
+  el.addEventListener('seeked', onSeeked);
+
+  // Слушаем loadstart для обнаружения смены трека.
+  // Когда Beatport переключает трек (next/prev), src элемента меняется,
+  // и браузер генерирует loadstart.
+  el.addEventListener('loadstart', onTrackChange);
 
   // Ждём появления src, затем привязываем элемент
   const interval = setInterval(() => {
@@ -129,6 +296,29 @@ function watchBeatportElement(el: HTMLMediaElement): void {
       // Мы только контролируем playbackRate через hijackPlaybackRate.
       if (engine) {
         engine.attachToMedia(el, true);
+      }
+
+      // Если пользователь нажал Play до того, как появился реальный URL —
+      // запускаем подготовку аудио немедленно.
+      if (_pendingPlay && !_preparingBeatport && engine) {
+        _pendingPlay = false;
+        _preparingBeatport = true;
+        console.log('[Content] Beatport: pending play detected, starting audio preparation:', src);
+        engine.prepareBeatportAudio(src);
+      }
+
+      // Если play() был перехвачен (из-за невалидного src) —
+      // вызываем настоящий play() на элементе, чтобы Beatport
+      // получил событие play и продолжил нормальную работу.
+      if (_playRequested) {
+        _playRequested = false;
+        console.log('[Content] Beatport: calling deferred play() on element with real URL');
+        originalPlay().catch((err) => {
+          console.log(
+            '[Content] Beatport: deferred play() result:',
+            (err as Error)?.message || err,
+          );
+        });
       }
     }
   }, 200);
@@ -246,17 +436,32 @@ const isBeatport = window.location.href.includes('beatport.com');
     this: AudioContext,
     element: HTMLMediaElement,
   ): MediaElementAudioSourceNode {
-    // Для Beatport: возвращаем заглушку, чтобы Vibes Fast не захватил звук
+    // Для Beatport: всегда возвращаем заглушку, чтобы Vibes Fast
+    // не получил доступ к реальному аудио-потоку.
+    // Даже если src ещё невалидный (search?q=...), пытаемся вернуть заглушку,
+    // чтобы избежать ошибки Illegal invocation / NotSupportedError у Vibes Fast.
     if (isBeatport && dummyCtx) {
-      console.log(
-        '[Content] Intercepted createMediaElementSource for Beatport, returning dummy source',
-      );
-      // Создаём реальный MediaElementAudioSourceNode, но на dummy-контексте
-      // и НЕ подключаем его к destination. Vibes Fast получит ноду,
-      // но звук никуда не пойдёт.
-      const dummySource = originalCreateMediaElementSource.call(dummyCtx, element);
-      // Не подключаем dummySource к dummyCtx.destination — звука не будет
-      return dummySource;
+      // Пробуем создать dummy source. Если элемент ещё не имеет валидного src,
+      // createMediaElementSource может выбросить ошибку — ловим её.
+      try {
+        const dummySource = originalCreateMediaElementSource.call(dummyCtx, element);
+        console.log(
+          '[Content] Intercepted createMediaElementSource for Beatport, returning dummy source',
+        );
+        // Не подключаем dummySource к dummyCtx.destination — звука не будет
+        return dummySource;
+      } catch (e) {
+        // Если не удалось создать dummy source (элемент без валидного src),
+        // возвращаем GainNode как заглушку. GainNode имеет все методы AudioNode
+        // (connect, disconnect), что предотвращает ошибки в Vibes Fast.
+        console.log(
+          '[Content] createMediaElementSource failed for Beatport (no valid src), returning GainNode stub:',
+          (e as Error)?.message || e,
+        );
+        const stubNode = dummyCtx.createGain();
+        // Не подключаем к destination — звука не будет
+        return stubNode as unknown as MediaElementAudioSourceNode;
+      }
     }
     // Для всех остальных платформ — стандартное поведение
     return originalCreateMediaElementSource.call(this, element);
@@ -715,6 +920,7 @@ class AudioEngine {
   private _beatportStartTime: number = 0;
   private _lastKnownSrc: string = '';
   private _isBufferPlaying: boolean = false;
+  private _isBeatportSeeking: boolean = false;
 
   constructor() {
     this.adapterManager = new AdapterManager();
@@ -752,6 +958,14 @@ class AudioEngine {
         // 2. Воспроизводим аудио через fetch + decodeAudioData + AudioBufferSourceNode
         //    на раннем AudioContext (созданном в IIFE до Vibes Fast)
         // 3. Контролируем скорость через playbackRate на AudioBufferSourceNode
+        //
+        // Глушим элемент СРАЗУ при создании, чтобы предотвратить "заикание"
+        // (доли секунды звука из оригинального элемента до того, как наш
+        // AudioBufferSourceNode будет готов к воспроизведению).
+        try {
+          el.volume = 0;
+          el.muted = true;
+        } catch {}
         this.hijackPlaybackRate(el, this.state.speed);
         watchBeatportElement(el);
         return;
@@ -1286,9 +1500,23 @@ class AudioEngine {
    * CORS-заголовки добавляются через declarativeNetRequest (rules.json).
    */
   public prepareBeatportAudio(url: string): void {
-    if (this._lastKnownSrc === url && this._isBufferPlaying) {
-      console.log('[Content] Beatport: already playing this URL, skipping');
+    // Если это тот же URL и буфер уже загружен — просто возобновляем воспроизведение
+    // с сохранённой позиции (offset), не перезапрашивая fetch.
+    if (this._lastKnownSrc === url && this._beatportAudioBuffer) {
+      console.log('[Content] Beatport: resuming playback from offset:', this._beatportStartOffset);
+      this.startBeatportPlayback();
       return;
+    }
+
+    // Если это новый URL — сбрасываем offset и останавливаем старый буфер,
+    // так как начинаем новый трек
+    if (this._lastKnownSrc !== url) {
+      console.log('[Content] Beatport: new track URL detected, stopping old buffer');
+      this._beatportStartOffset = 0;
+      // Останавливаем старый буфер немедленно, чтобы старый трек не продолжал играть
+      // пока загружается новый
+      this.stopBeatportPlayback();
+      this._beatportAudioBuffer = null;
     }
     this._lastKnownSrc = url;
 
@@ -1392,11 +1620,24 @@ class AudioEngine {
     // уже управляет основным аудио-графом, а мы создаём параллельный поток)
     source.connect(ctx.destination);
 
-    // Запоминаем время старта для возможной паузы
+    // Запоминаем время старта для возможной паузы.
+    // Используем сохранённый _beatportStartOffset, чтобы при возобновлении
+    // после паузы трек продолжился с того же места, а не с начала.
     this._beatportStartTime = ctx.currentTime;
-    this._beatportStartOffset = 0;
 
-    source.start(0);
+    const offset = Math.max(0, this._beatportStartOffset);
+    const duration = this._beatportAudioBuffer.duration;
+    // Если offset превышает длительность трека, начинаем с начала
+    const startOffset = offset >= duration ? 0 : offset;
+
+    console.log(
+      '[Content] Beatport: starting playback at offset:',
+      startOffset,
+      '/ duration:',
+      duration,
+    );
+
+    source.start(0, startOffset);
     this.bufferSource = source;
     this._isBufferPlaying = true;
 
@@ -1405,6 +1646,12 @@ class AudioEngine {
     // Обработка окончания воспроизведения
     source.onended = () => {
       console.log('[Content] Beatport: playback ended');
+      // Если мы в процессе seek — не сбрасываем флаги,
+      // так как новый источник уже создан и управляется отдельно
+      if (this._isBeatportSeeking) {
+        console.log('[Content] Beatport: ignoring ended during seek');
+        return;
+      }
       this._isBufferPlaying = false;
       this.bufferSource = null;
     };
@@ -1412,6 +1659,11 @@ class AudioEngine {
 
   private stopBeatportPlayback(): void {
     if (this.bufferSource) {
+      // ВАЖНО: очищаем onended ДО вызова stop(), чтобы prevent
+      // асинхронного срабатывания onended после того, как мы уже
+      // создали новый источник (при seek). Иначе старый onended
+      // сбросит _isBufferPlaying и bufferSource нового источника.
+      this.bufferSource.onended = null;
       try {
         this.bufferSource.stop();
         this.bufferSource.disconnect();
@@ -1432,6 +1684,54 @@ class AudioEngine {
       this.stopBeatportPlayback();
       console.log('[Content] Beatport: playback paused');
     }
+  }
+
+  /**
+   * Обрабатывает seek на Beatport — пересоздаёт AudioBufferSourceNode
+   * с новой позиции, когда пользователь кликает на прогресс-бар.
+   */
+  public seekBeatportPlayback(newTime: number): void {
+    if (!this._beatportAudioBuffer) {
+      console.warn('[Content] Beatport: cannot seek, no audio buffer loaded');
+      return;
+    }
+
+    // Обновляем offset до новой позиции
+    this._beatportStartOffset = Math.max(0, Math.min(newTime, this._beatportAudioBuffer.duration));
+
+    // Если буфер сейчас играет — пересоздаём источник с новой позиции
+    if (this._isBufferPlaying) {
+      console.log('[Content] Beatport: seeking to:', this._beatportStartOffset);
+      // Устанавливаем флаг seek, чтобы onended от старого источника
+      // не сбросил флаги нового источника
+      this._isBeatportSeeking = true;
+      this.startBeatportPlayback();
+      this._isBeatportSeeking = false;
+    }
+    // Если буфер на паузе — просто обновляем offset,
+    // при следующем play воспроизведение начнётся с новой позиции
+  }
+
+  /**
+   * Возвращает true, если Beatport буфер в данный момент воспроизводится.
+   */
+  public isBeatportBufferPlaying(): boolean {
+    return this._isBufferPlaying;
+  }
+
+  /**
+   * Сбрасывает состояние Beatport при смене трека (next/prev).
+   * Останавливает текущее воспроизведение и очищает закешированный буфер,
+   * чтобы при новом play загрузился актуальный трек.
+   */
+  public resetBeatportState(): void {
+    console.log('[Content] Beatport: resetting state for track change');
+    this.stopBeatportPlayback();
+    this._beatportAudioBuffer = null;
+    this._lastKnownSrc = '';
+    this._beatportStartOffset = 0;
+    this._beatportStartTime = 0;
+    this._isBeatportSeeking = false;
   }
 
   /**
