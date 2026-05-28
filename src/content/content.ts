@@ -6,13 +6,13 @@
 
 import { isBlockedUrl } from '../shared/helpers';
 import { INIT_FLAG } from './media-detection';
-import { AudioEngine } from './audio-engine';
+import { createAudioEngine, type AudioEngineAPI } from './audio-engine';
 
 // ============================================================
 // Main initialization
 // ============================================================
 
-let audioEngine: AudioEngine | null = null;
+let audioEngine: AudioEngineAPI | null = null;
 
 // Listen for commands from content-dispatcher (ISOLATED world)
 // Content-dispatcher получает команды от popup/sidepanel через chrome.tabs.sendMessage
@@ -25,7 +25,7 @@ window.addEventListener('transpose-dispatch-controls-to-content', ((event: Custo
 
   // Initialize AudioEngine if needed
   if (!audioEngine) {
-    audioEngine = new AudioEngine();
+    audioEngine = createAudioEngine();
   }
 
   // Process command
@@ -107,7 +107,7 @@ if (!(window as any)[INIT_FLAG]) {
 
   if (!isBlockedUrl(window.location.href)) {
     // Initialize AudioEngine
-    audioEngine = new AudioEngine();
+    audioEngine = createAudioEngine();
     (window as any).___tp_audioEngine = audioEngine;
 
     // Signal that content script is ready
