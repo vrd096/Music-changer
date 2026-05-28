@@ -5,7 +5,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AudioControls } from '../shared/AudioControls';
-import type { MediaState, ServiceWorkerMessage } from '../shared/types';
+import type { MediaState, ServiceWorkerMessage, EqBand } from '../shared/types';
+import { DEFAULT_EQ_BANDS } from '../shared/types';
 
 // --- i18n helper ---
 const t = (key: string, ...args: string[]): string => {
@@ -517,6 +518,7 @@ export const PopupApp: React.FC = () => {
     varispeed: false,
     eqEnabled: false,
   } as any);
+  const [eqBands, setEqBands] = useState<EqBand[]>(DEFAULT_EQ_BANDS.map((b) => ({ ...b })));
   const [toolbarProgressVisible, setToolbarProgressVisible] = useState(false);
   const [hasPro] = useState(false);
   const progressShowTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -678,22 +680,6 @@ export const PopupApp: React.FC = () => {
     [sendCommand],
   );
 
-  const handlePitchChange = useCallback(
-    (value: number) => {
-      setMedia((prev) => ({ ...prev, pitch: value }));
-      sendCommand({ pitch: value });
-    },
-    [sendCommand],
-  );
-
-  const handleFormantChange = useCallback(
-    (value: number) => {
-      setMedia((prev) => ({ ...prev, formant: value }));
-      sendCommand({ formant: value });
-    },
-    [sendCommand],
-  );
-
   const handleSpeedChange = useCallback(
     (value: number) => {
       setMedia((prev) => ({ ...prev, speed: value }));
@@ -702,26 +688,22 @@ export const PopupApp: React.FC = () => {
     [sendCommand],
   );
 
-  const handleVarispeedChange = useCallback(
-    (checked: boolean) => {
-      setMedia((prev) => ({ ...prev, varispeed: checked }));
-      sendCommand({ varispeed: checked });
-    },
-    [sendCommand],
-  );
-
-  const handleLoopModeChange = useCallback(
-    (mode: 'off' | 'loop' | 'loop-one') => {
-      setMedia((prev) => ({ ...prev, loopMode: mode }) as any);
-      sendCommand({ loopMode: mode } as any);
-    },
-    [sendCommand],
-  );
-
   const handleEqToggle = useCallback(
     (checked: boolean) => {
       setMedia((prev) => ({ ...prev, eqEnabled: checked }) as any);
       sendCommand({ eqEnabled: checked } as any);
+    },
+    [sendCommand],
+  );
+
+  const handleEqBandChange = useCallback(
+    (index: number, gain: number) => {
+      setEqBands((prev) => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], gain };
+        return updated;
+      });
+      sendCommand({ eqBand: { index, gain } } as any);
     },
     [sendCommand],
   );
@@ -796,12 +778,10 @@ export const PopupApp: React.FC = () => {
             media={media}
             connectionStatus={connectionStatus}
             onSemitoneChange={handleSemitoneChange}
-            onPitchChange={handlePitchChange}
-            onFormantChange={handleFormantChange}
             onSpeedChange={handleSpeedChange}
-            onVarispeedChange={handleVarispeedChange}
-            onLoopModeChange={handleLoopModeChange}
             onEqToggle={handleEqToggle}
+            eqBands={eqBands}
+            onEqBandChange={handleEqBandChange}
           />
         )}
         {currentPage === 'history' && <HistoryPage isSidePanel={false} />}

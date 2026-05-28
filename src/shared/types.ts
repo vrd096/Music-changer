@@ -26,6 +26,24 @@ export interface Clip {
   reducerAmount?: number;
 }
 
+/** EQ band configuration */
+export interface EqBand {
+  type: BiquadFilterType;
+  frequency: number;
+  gain: number;
+  Q: number;
+}
+
+/** Default EQ bands (6-band equalizer) */
+export const DEFAULT_EQ_BANDS: EqBand[] = [
+  { type: 'highpass', frequency: 30, gain: 0, Q: 0.7 },
+  { type: 'lowshelf', frequency: 120, gain: 0, Q: 0.7 },
+  { type: 'peaking', frequency: 350, gain: 0, Q: 1 },
+  { type: 'peaking', frequency: 1200, gain: 0, Q: 1 },
+  { type: 'peaking', frequency: 3500, gain: 0, Q: 1 },
+  { type: 'highshelf', frequency: 9000, gain: 0, Q: 0.7 },
+];
+
 /** Media/track state */
 export interface MediaState {
   url: string;
@@ -94,6 +112,11 @@ export interface ServiceWorkerMessage {
   semitone?: number;
   loopMode?: string;
   media?: Partial<MediaState>;
+  /** Used by popup/sidepanel to receive state updates */
+  type?: 'state-update' | 'connection-status' | 'toolbar-progress';
+  status?: 'connecting' | 'connected' | 'disconnected' | 'no-permission';
+  hostUrl?: string;
+  visible?: boolean;
 }
 
 /** Message from content script to service worker */
