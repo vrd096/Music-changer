@@ -3,14 +3,8 @@
 // ============================================================
 
 import { runtimeLog } from '../shared/runtime-logger';
-import {
-  isBlockedUrl,
-  isVivExt,
-  isYaBrowser,
-  hasSidePanel,
-  type ServiceWorkerMessage,
-  type ContentMessage,
-} from '../shared/types';
+import { isBlockedUrl, isVivExt, isYaBrowser, hasSidePanel } from '../shared/helpers';
+import type { ServiceWorkerMessage, ContentMessage } from '../shared/types';
 import { hasHostPermissions, registerContentScripts } from './content-scripts';
 import { updateBadge, highlightToolbarIcon } from './badge';
 
@@ -529,7 +523,7 @@ chrome.runtime.onMessageExternal.addListener((msg: any, _sender, sendResponse) =
 
   if (msg.type === 'store-share-payload') {
     (async () => {
-      const { createSharePayload } = await import('../shared/types');
+      const { createSharePayload } = await import('../shared/helpers');
       const payload = createSharePayload(msg.share);
       if (payload) {
         await chrome.storage.local.set({ pendingShare: payload });

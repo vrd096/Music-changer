@@ -4,7 +4,7 @@
 // formant, and loop mode for media elements on the page.
 // ============================================================
 
-import { isBlockedUrl } from '../shared/types';
+import { isBlockedUrl } from '../shared/helpers';
 import { INIT_FLAG } from './media-detection';
 import { AudioEngine } from './audio-engine';
 

@@ -3,7 +3,7 @@
 // Bridges MAIN world events to the service worker
 // ============================================================
 
-import { isBlockedUrl } from '../shared/types';
+import { isBlockedUrl } from '../shared/helpers';
 
 const INIT_FLAG = '___tp_isInitialized_dispatcher';
 const extensionOrigin = chrome.runtime.getURL('');

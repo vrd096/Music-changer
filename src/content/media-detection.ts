@@ -1,4 +1,4 @@
-import { isBlockedUrl } from '../shared/types';
+import { isBlockedUrl } from '../shared/helpers';
 
 export const INIT_FLAG = '___tp_isInitialized';
 

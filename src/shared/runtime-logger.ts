@@ -8,7 +8,7 @@ import {
   RUNTIME_LOG_MAX,
   RUNTIME_LOG_STRING_MAX,
   RUNTIME_LOG_DEPTH_MAX,
-} from './types';
+} from './helpers';
 
 /** Safely serialize a value for logging */
 function safeSerialize(value: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
