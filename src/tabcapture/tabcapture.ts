@@ -3,28 +3,16 @@
 // ============================================================
 
 import { runtimeLog } from '../shared/runtime-logger';
+import { createEqChain, applyEqBands, type EqBand } from './eq-chain';
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 const APP_KEY = 3470712367;
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 interface AudioSettings {
   pro: boolean;
   license?: string;
   licenseCheckSum?: string | null;
   audioProcessorEnabled: boolean;
   appCheckSum: number;
-}
-
-interface EqBand {
-  type: BiquadFilterType;
-  frequency: number;
-  gain: number;
-  Q: number;
 }
 
 interface ProcessorParams {
@@ -197,50 +185,8 @@ function sendToServiceWorker(msg: Record<string, unknown>): void {
 
 // ---------------------------------------------------------------------------
 // Audio processing
-// ---------------------------------------------------------------------------
-
-/** Create EQ biquad filter chain */
-function createEqChain(ctx: AudioContext): BiquadFilterNode[] {
-  const bands: EqBand[] = [
-    { type: 'highpass', frequency: 30, gain: 0, Q: 0.7 },
-    { type: 'lowshelf', frequency: 120, gain: 0, Q: 0.7 },
-    { type: 'peaking', frequency: 350, gain: 0, Q: 1 },
-    { type: 'peaking', frequency: 1200, gain: 0, Q: 1 },
-    { type: 'peaking', frequency: 3500, gain: 0, Q: 1 },
-    { type: 'highshelf', frequency: 9000, gain: 0, Q: 0.7 },
-  ];
-
-  const filters: BiquadFilterNode[] = bands.map((b) => {
-    const f = ctx.createBiquadFilter();
-    f.type = b.type;
-    f.frequency.value = b.frequency;
-    f.gain.value = b.gain;
-    f.Q.value = b.Q;
-    return f;
-  });
-
-  // Connect filters in series
-  for (let i = 0; i < filters.length - 1; i++) {
-    filters[i].connect(filters[i + 1]);
-  }
-
-  // Add dynamics compressor at the end
-  if (filters.length > 0) {
-    const compressor = ctx.createDynamicsCompressor();
-    compressor.threshold.value = -3;
-    compressor.knee.value = 0;
-    compressor.ratio.value = 20;
-    compressor.attack.value = 0.001;
-    compressor.release.value = 0.05;
-    filters[filters.length - 1].connect(compressor);
-    compressor.connect(ctx.destination);
-  }
-
-  return filters;
-}
-
-/** Apply EQ band settings */
-function applyEqBands(eqBands: EqBand[] | undefined, eqEnabled: boolean | undefined): void {
+/** Apply EQ band settings (wrapper using module-level state) */
+function applyLocalEqBands(eqBands: EqBand[] | undefined, eqEnabled: boolean | undefined): void {
   if (!settings.pro) return;
 
   if (!eqFilters.length && audioContext) {
@@ -566,7 +512,7 @@ async function processCommand(msg: TabCaptureCommand): Promise<void> {
 
         // Apply EQ bands
         if (msg.eqBands !== undefined || msg.eqEnabled !== undefined) {
-          applyEqBands(msg.eqBands, msg.eqEnabled);
+          applyLocalEqBands(msg.eqBands, msg.eqEnabled);
         }
         break;
 

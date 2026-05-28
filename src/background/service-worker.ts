@@ -11,6 +11,8 @@ import {
   type ServiceWorkerMessage,
   type ContentMessage,
 } from '../shared/types';
+import { hasHostPermissions, registerContentScripts } from './content-scripts';
+import { updateBadge, highlightToolbarIcon } from './badge';
 
 // --- UI Mode Detection ---
 
@@ -20,7 +22,6 @@ let sidePanelOnceTabId: number | null = null;
 const sidePanelTabs = new Set<number>();
 const connectedTabs = new Set<number>();
 const connectThrottle = new Map<number, number>();
-const highlightTimers = new Map<number, ReturnType<typeof setTimeout>[]>();
 
 async function detectUiMode(): Promise<void> {
   try {
@@ -112,79 +113,6 @@ async function updateUiForTab(tab: chrome.tabs.Tab | undefined): Promise<void> {
   }
 }
 
-// --- Content Script Registration ---
-
-// Проверяет, есть ли у расширения host_permissions (были ли они предоставлены)
-function hasHostPermissions(): Promise<boolean> {
-  return new Promise((resolve) => {
-    chrome.permissions.contains({ origins: ['*://*/*'] }, (result) => resolve(result));
-  });
-}
-
-async function registerContentScripts(): Promise<void> {
-  const perms = (await chrome.permissions.getAll()).origins || [];
-  const allUrls = perms.includes('<all_urls>') ? ['*://*/*'] : perms;
-  // Принимаем любые http/https паттерны, не только *://
-  // После предоставления прав на конкретный сайт (например, https://www.youtube.com/*)
-  // паттерн не начинается с *://, но должен быть использован для регистрации скриптов
-  const matches = allUrls
-    .filter((u) => u.startsWith('*://') || u.startsWith('http://') || u.startsWith('https://'))
-    .sort();
-
-  if (matches.length === 0) {
-    console.log('[SW] No matching URL patterns found for content scripts, permissions:', perms);
-    return;
-  }
-
-  const dispatcherId = 'tp_content_dispatcher';
-  const contentId = 'tp_content';
-  const scripts = [
-    {
-      id: dispatcherId,
-      matches,
-      js: ['content-dispatcher.js'],
-      runAt: 'document_start' as const,
-      world: 'ISOLATED' as const,
-      allFrames: true,
-      persistAcrossSessions: true,
-    },
-    {
-      id: contentId,
-      matches,
-      js: ['content.js'],
-      runAt: 'document_start' as const,
-      world: 'MAIN' as const,
-      allFrames: true,
-      persistAcrossSessions: true,
-      matchOriginAsFallback: true,
-    },
-  ];
-
-  const scriptIds = new Set([dispatcherId, contentId]);
-  const registered = await chrome.scripting.getRegisteredContentScripts();
-  const registeredIds = new Set(registered.map((s) => s.id));
-  const hasUpdate = !!chrome.scripting.updateContentScripts;
-
-  for (const script of scripts) {
-    if (registeredIds.has(script.id)) {
-      if (hasUpdate) {
-        await chrome.scripting.updateContentScripts([script as any]);
-      } else {
-        await chrome.scripting.unregisterContentScripts({ ids: [script.id] });
-        await chrome.scripting.registerContentScripts([script as any]);
-      }
-    } else {
-      await chrome.scripting.registerContentScripts([script as any]);
-    }
-  }
-
-  // Unregister scripts that are no longer needed
-  const toRemove = registered.filter((s) => !scriptIds.has(s.id)).map((s) => s.id);
-  if (toRemove.length > 0) {
-    await chrome.scripting.unregisterContentScripts({ ids: toRemove });
-  }
-}
-
 // --- Messaging ---
 
 async function sendRuntimeMessage(msg: ServiceWorkerMessage, context: string): Promise<boolean> {
@@ -224,75 +152,6 @@ async function sendWithRetry(
       sendRuntimeMessage(msg, `${context}-retry`);
     }, delay);
   }
-}
-
-// --- Badge Management ---
-
-function updateBadge(tabId: number, semitone?: number, loopMode?: string): void {
-  chrome.action.getBadgeText({ tabId }, (currentText) => {
-    let hasLoop = currentText.includes('▶');
-    let currentSemitone: number | undefined;
-
-    const withoutLoop = currentText.replace('▶', '').trim();
-    if (withoutLoop) {
-      const parsed = parseFloat(withoutLoop);
-      if (!isNaN(parsed)) currentSemitone = parsed;
-    }
-
-    if (loopMode !== undefined) hasLoop = loopMode !== 'off';
-    if (semitone !== undefined) currentSemitone = semitone;
-
-    const parts: string[] = [];
-    if (hasLoop) parts.push('▶');
-    if (currentSemitone !== undefined && currentSemitone !== 0)
-      parts.push(currentSemitone.toString());
-
-    const text = parts.join(' ').trim();
-    chrome.action.setBadgeText({ tabId, text });
-    chrome.action.setBadgeBackgroundColor({ tabId, color: '#4b60d8ff' });
-  });
-}
-
-// --- Icon Highlight Animation ---
-
-function highlightToolbarIcon(tabId: number): void {
-  const existing = highlightTimers.get(tabId);
-  if (existing) existing.forEach(clearTimeout);
-
-  const timers: ReturnType<typeof setTimeout>[] = [];
-  highlightTimers.set(tabId, timers);
-
-  const normal = { 16: 'assets/icons/icon-16-32x32.png', 32: 'assets/icons/icon-32x32.png' };
-  const highlight = {
-    16: 'assets/icons/icon-16-32x32-highlight.png',
-    32: 'assets/icons/icon-16-32x32-highlight.png',
-  };
-
-  let delay = 0;
-  for (let i = 0; i < 3; i++) {
-    timers.push(
-      setTimeout(() => {
-        chrome.action.setIcon({ tabId, path: highlight }, () => {
-          chrome.runtime.lastError;
-        });
-      }, delay),
-    );
-    delay += 320;
-    timers.push(
-      setTimeout(() => {
-        chrome.action.setIcon({ tabId, path: normal }, () => {
-          chrome.runtime.lastError;
-        });
-      }, delay),
-    );
-    delay += 250;
-  }
-
-  timers.push(
-    setTimeout(() => {
-      highlightTimers.delete(tabId);
-    }, delay),
-  );
 }
 
 // --- Message Processing ---
@@ -564,7 +423,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   sidePanelTabs.delete(tabId);
   connectedTabs.delete(tabId);
   connectThrottle.delete(tabId as any);
-  highlightTimers.delete(tabId);
 
   if (sidePanelOnceTabId === tabId) {
     sidePanelOnceTabId = null;
