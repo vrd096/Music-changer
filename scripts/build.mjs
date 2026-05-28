@@ -1,68 +1,62 @@
 #!/usr/bin/env node
 
-/**
- * Build script for Transpose React Chrome Extension
- *
- * Usage:
- *   node scripts/build.mjs          # Production build
- *   node scripts/build.mjs --watch  # Watch mode (dev)
- */
-
 import { execSync } from 'child_process';
-import { existsSync, rmSync, mkdirSync, copyFileSync, readdirSync, statSync } from 'fs';
+import {
+  existsSync,
+  rmSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+  readFileSync,
+  writeFileSync,
+} from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const DIST = resolve(ROOT, 'dist');
-const SRC = resolve(ROOT, 'src');
 
 const args = process.argv.slice(2);
 const isWatch = args.includes('--watch');
 const isDev = args.includes('--dev') || isWatch;
 
-// ---------------------------------------------------------------------------
-// Step 1: Clean dist
-// ---------------------------------------------------------------------------
+// Clean dist
 console.log('🧹 Cleaning dist/...');
-if (existsSync(DIST)) {
-  rmSync(DIST, { recursive: true, force: true });
-}
+if (existsSync(DIST)) rmSync(DIST, { recursive: true, force: true });
 mkdirSync(DIST, { recursive: true });
 
-// ---------------------------------------------------------------------------
-// Step 2: Run webpack
-// ---------------------------------------------------------------------------
-console.log(`📦 Building with webpack (${isDev ? 'development' : 'production'})...`);
+// Build with Vite
+console.log(`📦 Building with Vite (${isDev ? 'development' : 'production'})...`);
 
-const env = {
-  ...process.env,
-  NODE_ENV: isDev ? 'development' : 'production',
-};
+const env = { ...process.env, NODE_ENV: isDev ? 'development' : 'production' };
 
-const webpackArgs = [
-  '--config',
-  'webpack.config.js',
-  isWatch ? '--watch' : '',
-  '--stats',
-  'minimal',
-].filter(Boolean);
+const viteArgs = ['build'];
+if (isWatch) viteArgs.push('--watch');
 
 try {
-  execSync(`npx webpack ${webpackArgs.join(' ')}`, {
-    cwd: ROOT,
-    env,
-    stdio: 'inherit',
-  });
+  execSync(`npx vite ${viteArgs.join(' ')}`, { cwd: ROOT, env, stdio: 'inherit' });
 } catch (err) {
-  console.error('❌ Webpack build failed');
+  console.error('❌ Vite build failed');
   process.exit(1);
 }
 
-// ---------------------------------------------------------------------------
-// Step 3: Verify build output
-// ---------------------------------------------------------------------------
+// Build content scripts separately as IIFE (Chrome doesn't allow ESM in content scripts)
+console.log('📦 Building content scripts (IIFE)...');
+for (const name of ['content', 'content-dispatcher']) {
+  try {
+    execSync(`npx vite build --config vite.config.iife.ts --emptyOutDir false`, {
+      cwd: ROOT,
+      env: { ...env, VITE_IIFE_ENTRY: name },
+      stdio: 'inherit',
+    });
+  } catch (err) {
+    console.error(`❌ ${name}.js build failed`);
+    process.exit(1);
+  }
+}
+
+// Verify output
 console.log('🔍 Verifying build output...');
 
 const requiredFiles = [
@@ -93,52 +87,37 @@ const requiredFiles = [
 
 let allFound = true;
 for (const file of requiredFiles) {
-  const fullPath = join(DIST, file);
-  if (!existsSync(fullPath)) {
+  if (!existsSync(join(DIST, file))) {
     console.warn(`  ⚠️  Missing: ${file}`);
     allFound = false;
   }
 }
 
-if (allFound) {
-  console.log('✅ All required files present.');
-} else {
-  console.warn('⚠️  Some files are missing - the extension may not work correctly.');
-}
+if (allFound) console.log('✅ All required files present.');
+else console.warn('⚠️  Some files are missing - the extension may not work correctly.');
 
-// ---------------------------------------------------------------------------
-// Step 4: Summary
-// ---------------------------------------------------------------------------
 function getDirSize(dirPath) {
   let size = 0;
   try {
-    const entries = readdirSync(dirPath, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = join(dirPath, entry.name);
-      if (entry.isDirectory()) {
-        size += getDirSize(fullPath);
-      } else if (entry.isFile()) {
-        size += statSync(fullPath).size;
-      }
+    for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+      const fp = join(dirPath, entry.name);
+      if (entry.isDirectory()) size += getDirSize(fp);
+      else if (entry.isFile()) size += statSync(fp).size;
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
   return size;
 }
 
 const totalSize = getDirSize(DIST);
-const sizeKB = (totalSize / 1024).toFixed(1);
-const sizeMB = (totalSize / 1024 / 1024).toFixed(2);
-
 console.log('');
 console.log('✅ Build complete!');
 console.log(`   Output: ${DIST}`);
-console.log(`   Size:   ${sizeKB} KB (${sizeMB} MB)`);
+console.log(
+  `   Size:   ${(totalSize / 1024).toFixed(1)} KB (${(totalSize / 1024 / 1024).toFixed(2)} MB)`,
+);
 console.log('');
 console.log('📋 To load in Chrome:');
 console.log('   1. Go to chrome://extensions');
 console.log('   2. Enable "Developer mode"');
 console.log('   3. Click "Load unpacked"');
 console.log(`   4. Select the "${DIST}" folder`);
-console.log('');
