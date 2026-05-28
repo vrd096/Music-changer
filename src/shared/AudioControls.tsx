@@ -6,14 +6,7 @@
 import React, { useRef } from 'react';
 import type { MediaState, EqBand } from './types';
 import { DEFAULT_EQ_BANDS } from './types';
-
-// ============================================================
-// i18n helper (duplicated from App.tsx to avoid circular deps)
-// ============================================================
-const t = (key: string, ...args: string[]): string => {
-  const msg = chrome.i18n.getMessage(key, args);
-  return msg || key;
-};
+import { translate } from './i18n';
 
 // ============================================================
 // Slider
@@ -97,7 +90,7 @@ const MaterialSlider: React.FC<SliderProps> = ({
             <button
               className="icon-button icon-button-xs show-on-hover"
               onClick={onReset}
-              title={t('common.reset') || 'Reset'}>
+              title={translate('common.reset') || 'Reset'}>
               <span className="material-icons">undo</span>
             </button>
           )}
@@ -175,7 +168,7 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
     return (
       <div className="loading-container">
         <div className="loading-spinner" />
-        <div className="loading-text">{t('common.connecting') || 'Connecting...'}</div>
+        <div className="loading-text">{translate('common.connecting') || 'Connecting...'}</div>
       </div>
     );
   }
@@ -184,7 +177,7 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
     return (
       <div className="no-permission">
         <span className="material-icons">block</span>
-        <p>{t('common.noPermission') || 'No permission for this page'}</p>
+        <p>{translate('common.noPermission') || 'No permission for this page'}</p>
       </div>
     );
   }
@@ -194,7 +187,7 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
       {/* Pitch Section */}
       <div className="app-card">
         <div className="mat-mdc-card-header">
-          <span className="mat-mdc-card-title">{t('pitch.title') || 'Pitch'}</span>
+          <span className="mat-mdc-card-title">{translate('pitch.title') || 'Pitch'}</span>
           <span className="value">
             {media.semitone > 0 ? '+' : ''}
             {media.semitone}
@@ -202,7 +195,7 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
         </div>
         <div className="mat-mdc-card-content">
           <MaterialSlider
-            label={t('pitch.semitones') || 'Semitones'}
+            label={translate('pitch.semitones') || 'Semitones'}
             value={media.semitone}
             min={-12}
             max={12}
@@ -217,12 +210,12 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
       {/* Speed Section */}
       <div className="app-card">
         <div className="mat-mdc-card-header">
-          <span className="mat-mdc-card-title">{t('speed.title') || 'Speed'}</span>
+          <span className="mat-mdc-card-title">{translate('speed.title') || 'Speed'}</span>
           <span className="value">{media.speed.toFixed(2)}x</span>
         </div>
         <div className="mat-mdc-card-content">
           <MaterialSlider
-            label={t('speed.speed') || 'Speed'}
+            label={translate('speed.speed') || 'Speed'}
             value={media.speed}
             min={0.25}
             max={4}
@@ -238,11 +231,11 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
       {/* EQ Section */}
       <div className="app-card">
         <div className="mat-mdc-card-header">
-          <span className="mat-mdc-card-title">{t('eq.title') || 'Equalizer'}</span>
+          <span className="mat-mdc-card-title">{translate('eq.title') || 'Equalizer'}</span>
         </div>
         <div className="mat-mdc-card-content">
           <MaterialToggle
-            label={t('eq.enable') || 'Enable EQ'}
+            label={translate('eq.enable') || 'Enable EQ'}
             checked={(media as any).eqEnabled}
             onChange={onEqToggle}
           />
