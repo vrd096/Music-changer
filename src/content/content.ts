@@ -392,82 +392,6 @@ const isBeatport = window.location.href.includes('beatport.com');
   const originalCreateElement = document.createElement.bind(document);
   const originalAudio = window.Audio;
 
-  // Сохраняем оригинальный дескриптор playbackRate из прототипа ДО того,
-  // как Vibes Fast загрузится и переопределит его.
-  // Используется в hijackPlaybackRate для гарантии, что мы вызываем
-  // настоящий нативный setter, а не перехваченный Vibes Fast.
-  const nativePlaybackRateDescriptor = Object.getOwnPropertyDescriptor(
-    HTMLMediaElement.prototype,
-    'playbackRate',
-  );
-  (window as any).___tp_nativePlaybackRateDescriptor = nativePlaybackRateDescriptor;
-
-  // ============================================================
-  // Перехватываем AudioContext.prototype.createMediaElementSource
-  // на ВСЕХ AudioContext (включая тот, что создаёт Vibes Fast),
-  // чтобы вернуть заглушку (dummy source), которая не подключается
-  // к destination. Это предотвращает воспроизведение аудио через
-  // граф Vibes Fast, когда мы используем параллельный
-  // AudioBufferSourceNode (например, на Beatport).
-  //
-  // Проблема: _muteOriginalElement() устанавливает volume=0 на
-  // элементе, но createMediaElementSource перенаправляет аудио
-  // в Web Audio граф, где volume элемента не действует.
-  //
-  // Решение: перехватываем createMediaElementSource и возвращаем
-  // dummy-ноду, которая не подключена к destination. Vibes Fast
-  // думает, что захватил элемент, но звука нет.
-  //
-  // Для платформ, где мы НЕ используем параллельный AudioBufferSourceNode
-  // (SoundCloud, YouTube, junodownload), этот перехват НЕ включаем,
-  // так как там мы полагаемся на граф Vibes Fast для воспроизведения.
-  // ============================================================
-  const originalCreateMediaElementSource = AudioContext.prototype.createMediaElementSource.bind(
-    AudioContext.prototype,
-  );
-
-  // Создаём dummy AudioContext для создания заглушек
-  let dummyCtx: AudioContext | null = null;
-  try {
-    dummyCtx = new AudioContext();
-  } catch {}
-
-  AudioContext.prototype.createMediaElementSource = function (
-    this: AudioContext,
-    element: HTMLMediaElement,
-  ): MediaElementAudioSourceNode {
-    // Для Beatport: всегда возвращаем заглушку, чтобы Vibes Fast
-    // не получил доступ к реальному аудио-потоку.
-    // Даже если src ещё невалидный (search?q=...), пытаемся вернуть заглушку,
-    // чтобы избежать ошибки Illegal invocation / NotSupportedError у Vibes Fast.
-    if (isBeatport && dummyCtx) {
-      // Пробуем создать dummy source. Если элемент ещё не имеет валидного src,
-      // createMediaElementSource может выбросить ошибку — ловим её.
-      try {
-        const dummySource = originalCreateMediaElementSource.call(dummyCtx, element);
-        console.log(
-          '[Content] Intercepted createMediaElementSource for Beatport, returning dummy source',
-        );
-        // Не подключаем dummySource к dummyCtx.destination — звука не будет
-        return dummySource;
-      } catch (e) {
-        // Если не удалось создать dummy source (элемент без валидного src),
-        // возвращаем GainNode как заглушку. GainNode имеет все методы AudioNode
-        // (connect, disconnect), что предотвращает ошибки в Vibes Fast.
-        console.log(
-          '[Content] createMediaElementSource failed for Beatport (no valid src), returning GainNode stub:',
-          (e as Error)?.message || e,
-        );
-        const stubNode = dummyCtx.createGain();
-        // Не подключаем к destination — звука не будет
-        return stubNode as unknown as MediaElementAudioSourceNode;
-      }
-    }
-    // Для всех остальных платформ — стандартное поведение
-    return originalCreateMediaElementSource.call(this, element);
-  };
-  // ============================================================
-
   // Перехватываем document.createElement('audio') и document.createElement('video')
   document.createElement = function <T extends HTMLElement>(
     tagName: string,
@@ -480,9 +404,8 @@ const isBeatport = window.location.href.includes('beatport.com');
     return el;
   } as typeof document.createElement;
 
-  // Перехватываем new Audio() — НЕ для Beatport, т.к. Vibes Fast тоже патентует Audio
-  // и это приводит к конфликтам
-  if (originalAudio && !isBeatport) {
+  // Перехватываем new Audio()
+  if (originalAudio) {
     class PatchedAudio extends originalAudio {
       constructor(src?: string) {
         super(src);
@@ -496,16 +419,66 @@ const isBeatport = window.location.href.includes('beatport.com');
     window.Audio = PatchedAudio as any;
   }
 
-  // Создаём ранний AudioContext ДО загрузки Vibes Fast,
-  // чтобы Vibes Fast не перехватил его.
-  // Это нужно для ВСЕХ платформ (SoundCloud, YouTube и т.д.),
-  // так как Vibes Fast может быть активен на любом сайте.
-  try {
-    const earlyCtx = new AudioContext();
-    (window as any).___tp_earlyContext = earlyCtx;
-    console.log('[Content] Created early AudioContext before Vibes Fast');
-  } catch (err) {
-    console.warn('[Content] Failed to create early AudioContext:', err);
+  // ============================================================
+  // Beatport-специфичная логика: ранний AudioContext,
+  // перехват createMediaElementSource, nativePlaybackRateDescriptor.
+  // Эти дополнения нужны ТОЛЬКО для Beatport, так как там
+  // аудио управляется расширением Vibes Fast.
+  // Для остальных платформ (SoundCloud, YouTube, junodownload)
+  // используется стандартный подход без перехватов.
+  // ============================================================
+  if (isBeatport) {
+    // Сохраняем оригинальный дескриптор playbackRate из прототипа ДО того,
+    // как Vibes Fast загрузится и переопределит его.
+    const nativePlaybackRateDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype,
+      'playbackRate',
+    );
+    (window as any).___tp_nativePlaybackRateDescriptor = nativePlaybackRateDescriptor;
+
+    // Перехватываем AudioContext.prototype.createMediaElementSource
+    // чтобы вернуть заглушку (dummy source), которая не подключается
+    // к destination. Это предотвращает двойное аудио на Beatport.
+    const originalCreateMediaElementSource = AudioContext.prototype.createMediaElementSource.bind(
+      AudioContext.prototype,
+    );
+
+    let dummyCtx: AudioContext | null = null;
+    try {
+      dummyCtx = new AudioContext();
+    } catch {}
+
+    AudioContext.prototype.createMediaElementSource = function (
+      this: AudioContext,
+      element: HTMLMediaElement,
+    ): MediaElementAudioSourceNode {
+      if (dummyCtx) {
+        try {
+          const dummySource = originalCreateMediaElementSource.call(dummyCtx, element);
+          console.log(
+            '[Content] Intercepted createMediaElementSource for Beatport, returning dummy source',
+          );
+          return dummySource;
+        } catch (e) {
+          console.log(
+            '[Content] createMediaElementSource failed for Beatport (no valid src), returning GainNode stub:',
+            (e as Error)?.message || e,
+          );
+          const stubNode = dummyCtx.createGain();
+          return stubNode as unknown as MediaElementAudioSourceNode;
+        }
+      }
+      return originalCreateMediaElementSource.call(this, element);
+    };
+
+    // Создаём ранний AudioContext ДО загрузки Vibes Fast
+    try {
+      const earlyCtx = new AudioContext();
+      (window as any).___tp_earlyContext = earlyCtx;
+      console.log('[Content] Created early AudioContext before Vibes Fast');
+    } catch (err) {
+      console.warn('[Content] Failed to create early AudioContext:', err);
+    }
   }
 })();
 
@@ -947,21 +920,6 @@ class AudioEngine {
       // Для Beatport: перехватываем playbackRate и запускаем watchBeatportElement
       if (isBeatport) {
         console.log('[Content] Beatport: Intercepted audio element creation, starting watch');
-        // Перехватываем playbackRate на элементе СРАЗУ после создания,
-        // чтобы мы могли контролировать скорость через Vibes Fast.
-        // Vibes Fast полностью захватывает элемент (full capture) через
-        // createMediaElementSource. Когда src меняется на кросс-доменный URL,
-        // браузер мутирует звук (CORS muting).
-        //
-        // Решение:
-        // 1. Добавляем CORS-заголовки через declarativeNetRequest (rules.json)
-        // 2. Воспроизводим аудио через fetch + decodeAudioData + AudioBufferSourceNode
-        //    на раннем AudioContext (созданном в IIFE до Vibes Fast)
-        // 3. Контролируем скорость через playbackRate на AudioBufferSourceNode
-        //
-        // Глушим элемент СРАЗУ при создании, чтобы предотвратить "заикание"
-        // (доли секунды звука из оригинального элемента до того, как наш
-        // AudioBufferSourceNode будет готов к воспроизведению).
         try {
           el.volume = 0;
           el.muted = true;
@@ -978,11 +936,6 @@ class AudioEngine {
         console.log(`[Content] Skipping YouTube sound effect (intercepted):`, el);
         return;
       }
-
-      // Перехватываем playbackRate на элементе СРАЗУ после создания,
-      // ДО того как Vibes Fast успеет установить свой перехват.
-      // Это гарантирует, что наше значение playbackRate не сбрасывается.
-      this.hijackPlaybackRate(el, this.state.speed);
 
       // Если у элемента уже есть src — подключаемся
       if (hasValidSource(el)) {
@@ -1092,9 +1045,6 @@ class AudioEngine {
 
     if (element && element !== this.mediaElement) {
       console.log(`[Content] Found media via ${this.currentAdapter.platform} adapter:`, element);
-      // Перехватываем playbackRate на найденном элементе ДО attachToMedia,
-      // чтобы гарантировать, что наше значение не сбрасывается Vibes Fast
-      this.hijackPlaybackRate(element, this.state.speed);
       this.attachToMedia(element);
     }
   }
@@ -1273,26 +1223,28 @@ class AudioEngine {
   // --- Apply state to media element ---
 
   /**
-   * Перехватывает setter playbackRate на элементе, чтобы гарантировать,
-   * что наше значение не сбрасывается другими расширениями (Vibes Fast).
-   * Использует Object.defineProperty на самом экземпляре элемента.
+   * Перехватывает setter playbackRate на элементе.
+   * Для Beatport: использует Object.defineProperty для защиты от Vibes Fast.
+   * Для остальных платформ: просто устанавливает playbackRate напрямую.
    */
   private hijackPlaybackRate(el: HTMLMediaElement, speed: number): void {
     const clampedSpeed = Math.max(0.25, Math.min(16, speed));
 
-    // Если мы уже перехватили этот элемент — просто обновляем значение
+    // Для не-Beatport платформ: стандартное поведение без перехвата
+    if (!isBeatport) {
+      el.playbackRate = clampedSpeed;
+      return;
+    }
+
+    // Beatport-специфичный перехват (для защиты от Vibes Fast)
     if ((el as any).__tp_playbackRateHijacked) {
       (el as any).__tp_playbackRateValue = clampedSpeed;
-      // Пробуем установить напрямую (может не сработать из-за Vibes Fast)
       try {
         el.playbackRate = clampedSpeed;
       } catch {}
       return;
     }
 
-    // Используем оригинальный нативный дескриптор, сохранённый в IIFE
-    // ДО загрузки Vibes Fast. Это гарантирует, что мы вызываем
-    // настоящий нативный setter, а не перехваченный Vibes Fast.
     const nativeDescriptor = (window as any).___tp_nativePlaybackRateDescriptor as
       | PropertyDescriptor
       | undefined;
@@ -1300,15 +1252,12 @@ class AudioEngine {
     (el as any).__tp_playbackRateHijacked = true;
     (el as any).__tp_playbackRateValue = clampedSpeed;
 
-    // Перехватываем playbackRate на этом элементе
     Object.defineProperty(el, 'playbackRate', {
       get(): number {
         return (this as any).__tp_playbackRateValue ?? 1;
       },
       set(value: number) {
-        // Сохраняем наше значение
         (this as any).__tp_playbackRateValue = value;
-        // Пробуем вызвать оригинальный нативный setter (не перехваченный Vibes Fast)
         if (nativeDescriptor?.set) {
           nativeDescriptor.set.call(this, value);
         }
@@ -1317,7 +1266,6 @@ class AudioEngine {
       enumerable: true,
     });
 
-    // Устанавливаем начальное значение
     try {
       el.playbackRate = clampedSpeed;
     } catch {}
@@ -1429,17 +1377,13 @@ class AudioEngine {
       console.log('[Content] Beatport: updated buffer source speed to:', clampedSpeed);
     }
 
-    // Vibes Fast может сбросить playbackRate после нашей установки.
-    // Переустанавливаем с небольшой задержкой для надёжности.
-    // Используем множественные попытки с увеличивающейся задержкой,
-    // чтобы гарантировать, что наше значение остаётся.
-    if (this.mediaElement) {
+    // Beatport: Vibes Fast может сбросить playbackRate после нашей установки.
+    // Переустанавливаем с задержками только для Beatport.
+    if (isBeatport && this.mediaElement) {
       const delays = [100, 300, 800, 2000];
       for (const delay of delays) {
         setTimeout(() => {
           if (this.mediaElement && this.state.speed === speed) {
-            // Переустанавливаем hijackPlaybackRate, т.к. Vibes Fast мог перезаписать
-            // наш Object.defineProperty на экземпляре элемента
             this.hijackPlaybackRate(this.mediaElement, speed);
             this.mediaElement.playbackRate = Math.max(0.25, Math.min(16, speed));
           }

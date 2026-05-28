@@ -678,42 +678,10 @@ export const PopupApp: React.FC = () => {
     [sendCommand],
   );
 
-  const handlePitchChange = useCallback(
-    (value: number) => {
-      setMedia((prev) => ({ ...prev, pitch: value }));
-      sendCommand({ pitch: value });
-    },
-    [sendCommand],
-  );
-
-  const handleFormantChange = useCallback(
-    (value: number) => {
-      setMedia((prev) => ({ ...prev, formant: value }));
-      sendCommand({ formant: value });
-    },
-    [sendCommand],
-  );
-
   const handleSpeedChange = useCallback(
     (value: number) => {
       setMedia((prev) => ({ ...prev, speed: value }));
       sendCommand({ speed: value });
-    },
-    [sendCommand],
-  );
-
-  const handleVarispeedChange = useCallback(
-    (checked: boolean) => {
-      setMedia((prev) => ({ ...prev, varispeed: checked }));
-      sendCommand({ varispeed: checked });
-    },
-    [sendCommand],
-  );
-
-  const handleLoopModeChange = useCallback(
-    (mode: 'off' | 'loop' | 'loop-one') => {
-      setMedia((prev) => ({ ...prev, loopMode: mode }) as any);
-      sendCommand({ loopMode: mode } as any);
     },
     [sendCommand],
   );
@@ -796,11 +764,7 @@ export const PopupApp: React.FC = () => {
             media={media}
             connectionStatus={connectionStatus}
             onSemitoneChange={handleSemitoneChange}
-            onPitchChange={handlePitchChange}
-            onFormantChange={handleFormantChange}
             onSpeedChange={handleSpeedChange}
-            onVarispeedChange={handleVarispeedChange}
-            onLoopModeChange={handleLoopModeChange}
             onEqToggle={handleEqToggle}
           />
         )}

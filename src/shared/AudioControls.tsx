@@ -1,5 +1,5 @@
 // ============================================================
-// Shared AudioControls, MaterialSlider, MaterialToggle, LoopModeSelector
+// Shared AudioControls, MaterialSlider, MaterialToggle
 // Используется в sidepanel/App.tsx и popup/App.tsx
 // ============================================================
 
@@ -144,43 +144,6 @@ const MaterialToggle: React.FC<ToggleProps> = ({ label, checked, onChange, disab
 };
 
 // ============================================================
-// Loop Mode Selector
-// ============================================================
-
-interface LoopSelectorProps {
-  loopMode: 'off' | 'loop' | 'loop-one';
-  onChange: (mode: 'off' | 'loop' | 'loop-one') => void;
-}
-
-const LoopModeSelector: React.FC<LoopSelectorProps> = ({ loopMode, onChange }) => {
-  return (
-    <div className="loop-selector">
-      <button
-        className={`loop-btn ${loopMode === 'off' ? 'active' : ''}`}
-        onClick={() => onChange('off')}
-        title={t('loop.off') || 'Loop off'}>
-        <span className="material-icons">repeat_one</span>
-        <span className="loop-label">{t('loop.off') || 'Off'}</span>
-      </button>
-      <button
-        className={`loop-btn ${loopMode === 'loop' ? 'active' : ''}`}
-        onClick={() => onChange('loop')}
-        title={t('loop.loop') || 'Loop'}>
-        <span className="material-icons">repeat</span>
-        <span className="loop-label">{t('loop.loop') || 'Loop'}</span>
-      </button>
-      <button
-        className={`loop-btn ${loopMode === 'loop-one' ? 'active' : ''}`}
-        onClick={() => onChange('loop-one')}
-        title={t('loop.loopOne') || 'Loop one'}>
-        <span className="material-icons">repeat_one_on</span>
-        <span className="loop-label">{t('loop.loopOne') || 'One'}</span>
-      </button>
-    </div>
-  );
-};
-
-// ============================================================
 // AudioControls Props
 // ============================================================
 
@@ -188,11 +151,7 @@ export interface AudioControlsProps {
   media: MediaState;
   connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'no-permission';
   onSemitoneChange: (value: number) => void;
-  onPitchChange: (value: number) => void;
-  onFormantChange: (value: number) => void;
   onSpeedChange: (value: number) => void;
-  onVarispeedChange: (checked: boolean) => void;
-  onLoopModeChange: (mode: 'off' | 'loop' | 'loop-one') => void;
   onEqToggle: (checked: boolean) => void;
 }
 
@@ -204,11 +163,7 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
   media,
   connectionStatus,
   onSemitoneChange,
-  onPitchChange,
-  onFormantChange,
   onSpeedChange,
-  onVarispeedChange,
-  onLoopModeChange,
   onEqToggle,
 }) => {
   if (connectionStatus === 'connecting') {
@@ -238,7 +193,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
           <span className="value">
             {media.semitone > 0 ? '+' : ''}
             {media.semitone}
-            {media.pitch !== 0 ? ` (${media.pitch > 0 ? '+' : ''}${media.pitch}¢)` : ''}
           </span>
         </div>
         <div className="mat-mdc-card-content">
@@ -251,55 +205,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
             displayValue={media.semitone > 0 ? `+${media.semitone}` : `${media.semitone}`}
             onChange={onSemitoneChange}
             onReset={() => onSemitoneChange(0)}
-          />
-        </div>
-      </div>
-
-      {/* Fine Pitch */}
-      <div className="app-collapsible-card">
-        <div className="card-header">
-          <span className="card-title">{t('pitch.fine') || 'Fine'}</span>
-          <span className="display-value">
-            {media.pitch > 0 ? '+' : ''}
-            {media.pitch}¢
-          </span>
-          <div className="right-buttons" />
-        </div>
-        <div className="card-content">
-          <MaterialSlider
-            noCard
-            label={t('pitch.fine') || 'Fine pitch'}
-            value={media.pitch}
-            min={-100}
-            max={100}
-            step={1}
-            unit="¢"
-            onChange={onPitchChange}
-            onReset={() => onPitchChange(0)}
-          />
-        </div>
-      </div>
-
-      {/* Formant */}
-      <div className="app-collapsible-card">
-        <div className="card-header">
-          <span className="card-title">{t('pitch.formant') || 'Formant'}</span>
-          <span className="display-value">
-            {media.formant > 0 ? '+' : ''}
-            {media.formant}
-          </span>
-          <div className="right-buttons" />
-        </div>
-        <div className="card-content">
-          <MaterialSlider
-            noCard
-            label={t('pitch.formant') || 'Formant'}
-            value={media.formant}
-            min={-12}
-            max={12}
-            step={1}
-            onChange={onFormantChange}
-            onReset={() => onFormantChange(0)}
           />
         </div>
       </div>
@@ -325,17 +230,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
         </div>
       </div>
 
-      {/* Varispeed Toggle */}
-      <div className="app-card right-buttons">
-        <div className="mat-mdc-card-content">
-          <MaterialToggle
-            label={t('speed.varispeed') || 'Varispeed'}
-            checked={media.varispeed}
-            onChange={onVarispeedChange}
-          />
-        </div>
-      </div>
-
       {/* EQ Section */}
       <div className="app-card">
         <div className="mat-mdc-card-header">
@@ -346,19 +240,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
             label={t('eq.enable') || 'Enable EQ'}
             checked={(media as any).eqEnabled}
             onChange={onEqToggle}
-          />
-        </div>
-      </div>
-
-      {/* Loop Section */}
-      <div className="app-card">
-        <div className="mat-mdc-card-header">
-          <span className="mat-mdc-card-title">{t('loop.title') || 'Loop'}</span>
-        </div>
-        <div className="mat-mdc-card-content">
-          <LoopModeSelector
-            loopMode={(media as any).loopMode || 'off'}
-            onChange={onLoopModeChange}
           />
         </div>
       </div>

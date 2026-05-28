@@ -94,6 +94,11 @@ export interface ServiceWorkerMessage {
   semitone?: number;
   loopMode?: string;
   media?: Partial<MediaState>;
+  /** Used by popup/sidepanel to receive state updates */
+  type?: 'state-update' | 'connection-status' | 'toolbar-progress';
+  status?: 'connecting' | 'connected' | 'disconnected' | 'no-permission';
+  hostUrl?: string;
+  visible?: boolean;
 }
 
 /** Message from content script to service worker */
