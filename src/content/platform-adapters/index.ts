@@ -1,37 +1,24 @@
 import type { PlatformAdapter } from './types';
-import { YouTubeAdapter } from './youtube';
-import { SoundCloudAdapter } from './soundcloud';
-import { JunoDownloadAdapter } from './junodownload';
-import { BeatportAdapter } from './beatport';
-import { DefaultAdapter } from './default';
+import { createYouTubeAdapter } from './youtube';
+import { createSoundCloudAdapter } from './soundcloud';
+import { createJunoDownloadAdapter } from './junodownload';
+import { createBeatportAdapter } from './beatport';
+import { createDefaultAdapter } from './default';
 
 export type { PlatformAdapter } from './types';
-export { DefaultAdapter } from './default';
-export { YouTubeAdapter } from './youtube';
-export { SoundCloudAdapter } from './soundcloud';
-export { JunoDownloadAdapter } from './junodownload';
-export { BeatportAdapter } from './beatport';
 
-export class AdapterManager {
-  private adapters: PlatformAdapter[];
+const adapters: PlatformAdapter[] = [
+  createYouTubeAdapter(),
+  createSoundCloudAdapter(),
+  createJunoDownloadAdapter(),
+  createBeatportAdapter(),
+  createDefaultAdapter(),
+];
 
-  constructor() {
-    this.adapters = [
-      new YouTubeAdapter(),
-      new SoundCloudAdapter(),
-      new JunoDownloadAdapter(),
-      new BeatportAdapter(),
-      new DefaultAdapter(),
-    ];
+export function getAdapter(url?: string): PlatformAdapter {
+  const u = url || window.location.href;
+  for (const adapter of adapters) {
+    if (adapter.canHandle(u)) return adapter;
   }
-
-  getAdapter(): PlatformAdapter {
-    const url = window.location.href;
-    for (const adapter of this.adapters) {
-      if (adapter.canHandle(url)) {
-        return adapter;
-      }
-    }
-    return this.adapters[this.adapters.length - 1];
-  }
+  return adapters[adapters.length - 1];
 }

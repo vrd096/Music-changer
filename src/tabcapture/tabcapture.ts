@@ -15,7 +15,7 @@ interface AudioSettings {
   appCheckSum: number;
 }
 
-import { TransposeProcessorNode, type ProcessorParams } from './processor-node';
+import { createProcessorNode, type ProcessorNode, type ProcessorParams } from './processor-node';
 
 interface TabCaptureCommand {
   command: string;
@@ -41,19 +41,7 @@ interface TabCaptureCommand {
   connectionStatusMessage?: string;
 }
 
-/** Custom audio processor node wrapper */
-interface ProcessorNodeWrapper {
-  input: AudioWorkletNode | null;
-  ready: Promise<void>;
-  disconnect(): void;
-  stop(): void;
-  setParams(params: ProcessorParams): void;
-}
-
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-let processorNode: ProcessorNodeWrapper | null = null;
+let processorNode: ProcessorNode | null = null;
 let audioContext: AudioContext | null = null;
 let mediaStream: MediaStream | null = null;
 let sourceNode: MediaStreamAudioSourceNode | null = null;
@@ -277,7 +265,7 @@ async function initCapture(): Promise<void> {
 
         const destination = eqFilters.length > 0 ? eqFilters[0] : audioContext.destination;
 
-        processorNode = new TransposeProcessorNode(
+        processorNode = createProcessorNode(
           scriptPath,
           audioContext,
           settings.pro ? 'rb' : 'st',

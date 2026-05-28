@@ -1,4 +1,4 @@
-import { AdapterManager, type PlatformAdapter } from './platform-adapters';
+import { getAdapter, type PlatformAdapter } from './platform-adapters';
 import { DEFAULT_EQ_BANDS, type EqBand } from '../shared/types';
 import {
   isBeatport,
@@ -220,8 +220,7 @@ export class AudioEngine {
   private isDestroyed = false;
   private findMediaInterval: ReturnType<typeof setInterval> | null = null;
   private mutationObserver: MutationObserver | null = null;
-  private adapterManager: AdapterManager;
-  private currentAdapter: PlatformAdapter;
+  private currentAdapter: PlatformAdapter = getAdapter();
   private skipAudioWorklet = false;
   private eqFilters: BiquadFilterNode[] = [];
   private eqBands: EqBand[] = DEFAULT_EQ_BANDS.map((b) => ({ ...b }));
@@ -235,8 +234,7 @@ export class AudioEngine {
   private _isBeatportSeeking: boolean = false;
 
   constructor() {
-    this.adapterManager = new AdapterManager();
-    this.currentAdapter = this.adapterManager.getAdapter();
+    this.currentAdapter = getAdapter();
     console.log(`[Content] Platform adapter: ${this.currentAdapter.platform}`);
 
     const isYouTubeSoundEffect = (el: HTMLMediaElement): boolean => {
