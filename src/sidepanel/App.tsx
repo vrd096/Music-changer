@@ -5,7 +5,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AudioControls } from '../shared/AudioControls';
-import type { MediaState, ServiceWorkerMessage } from '../shared/types';
+import type { MediaState, ServiceWorkerMessage, EqBand } from '../shared/types';
+import { DEFAULT_EQ_BANDS } from '../shared/types';
 
 // --- i18n helper ---
 const t = (key: string, ...args: string[]): string => {
@@ -524,6 +525,7 @@ export const SidePanelApp: React.FC = () => {
   const [powerOn, setPowerOn] = useState(true);
   const [hasPro, setHasPro] = useState(false);
   const [isProTrial, setIsProTrial] = useState(false);
+  const [eqBands, setEqBands] = useState<EqBand[]>(DEFAULT_EQ_BANDS.map((b) => ({ ...b })));
   const [toolbarProgressVisible, setToolbarProgressVisible] = useState(false);
   const [sceneIndex, setSceneIndex] = useState(0);
 
@@ -707,6 +709,18 @@ export const SidePanelApp: React.FC = () => {
     [sendCommand],
   );
 
+  const handleEqBandChange = useCallback(
+    (index: number, gain: number) => {
+      setEqBands((prev) => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], gain };
+        return updated;
+      });
+      sendCommand({ eqBand: { index, gain } } as any);
+    },
+    [sendCommand],
+  );
+
   const cycleScene = useCallback(() => {
     setSceneIndex((prev) => (prev + 1) % sceneIcons.length);
     // Отправляем команду смены сцены напрямую в content script
@@ -860,6 +874,8 @@ export const SidePanelApp: React.FC = () => {
             onSemitoneChange={handleSemitoneChange}
             onSpeedChange={handleSpeedChange}
             onEqToggle={handleEqToggle}
+            eqBands={eqBands}
+            onEqBandChange={handleEqBandChange}
           />
         )}
         {currentPage === 'history' && <HistoryPage isSidePanel={true} />}

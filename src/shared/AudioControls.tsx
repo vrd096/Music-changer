@@ -4,7 +4,8 @@
 // ============================================================
 
 import React, { useRef } from 'react';
-import type { MediaState } from './types';
+import type { MediaState, EqBand } from './types';
+import { DEFAULT_EQ_BANDS } from './types';
 
 // ============================================================
 // i18n helper (duplicated from App.tsx to avoid circular deps)
@@ -153,6 +154,8 @@ export interface AudioControlsProps {
   onSemitoneChange: (value: number) => void;
   onSpeedChange: (value: number) => void;
   onEqToggle: (checked: boolean) => void;
+  eqBands?: EqBand[];
+  onEqBandChange?: (index: number, gain: number) => void;
 }
 
 // ============================================================
@@ -165,6 +168,8 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
   onSemitoneChange,
   onSpeedChange,
   onEqToggle,
+  eqBands,
+  onEqBandChange,
 }) => {
   if (connectionStatus === 'connecting') {
     return (
@@ -241,6 +246,33 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
             checked={(media as any).eqEnabled}
             onChange={onEqToggle}
           />
+          {(media as any).eqEnabled && (
+            <div className="eq-bands">
+              {(eqBands || DEFAULT_EQ_BANDS).map((band, i) => (
+                <MaterialSlider
+                  key={i}
+                  label={
+                    band.type === 'highpass'
+                      ? `↙ ${band.frequency} Hz HP`
+                      : band.type === 'highshelf'
+                        ? `↗ ${(band.frequency / 1000).toFixed(0)} kHz HS`
+                        : band.type === 'lowshelf'
+                          ? `↙ ${band.frequency} Hz LS`
+                          : `${band.frequency >= 1000 ? (band.frequency / 1000).toFixed(1) + ' kHz' : band.frequency + ' Hz'}`
+                  }
+                  value={band.gain}
+                  min={-12}
+                  max={12}
+                  step={0.5}
+                  unit=" dB"
+                  displayValue={band.gain > 0 ? `+${band.gain.toFixed(1)}` : band.gain.toFixed(1)}
+                  noCard={false}
+                  onChange={(value) => onEqBandChange?.(i, value)}
+                  onReset={() => onEqBandChange?.(i, 0)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </>

@@ -4,7 +4,7 @@
 // formant, and loop mode for media elements on the page.
 // ============================================================
 
-import { isBlockedUrl } from '../shared/types';
+import { isBlockedUrl, DEFAULT_EQ_BANDS, type EqBand } from '../shared/types';
 
 const INIT_FLAG = '___tp_isInitialized';
 
@@ -885,6 +885,10 @@ class AudioEngine {
 
   private skipAudioWorklet = false;
 
+  // --- EQ fields ---
+  private eqFilters: BiquadFilterNode[] = [];
+  private eqBands: EqBand[] = DEFAULT_EQ_BANDS.map((b) => ({ ...b }));
+
   // --- Beatport-specific fields ---
   private bufferSource: AudioBufferSourceNode | null = null;
   private _beatportAudioBuffer: AudioBuffer | null = null;
@@ -1213,10 +1217,48 @@ class AudioEngine {
         }
       }
 
+      // Create EQ chain if needed (insert between worklet and gainNode)
+      this._ensureEqChain();
+
       this.applyPitchState();
     } catch (err) {
       logError('Content', 'AudioWorklet init failed', err);
       this.workletInitPromise = null;
+    }
+  }
+
+  /** Create BiquadFilter chain and insert into audio graph */
+  private _ensureEqChain(): void {
+    if (this.eqFilters.length > 0) return;
+    const ctx = this.audioContext;
+    if (!ctx || !this.gainNode) return;
+
+    // Create filters
+    for (const band of this.eqBands) {
+      const f = ctx.createBiquadFilter();
+      f.type = band.type;
+      f.frequency.value = band.frequency;
+      f.gain.value = band.gain;
+      f.Q.value = band.Q;
+      this.eqFilters.push(f);
+    }
+
+    // Rewire: worklet → eq[0] → ... → eq[5] → gainNode (instead of worklet → gainNode)
+    const worklet = this.tpWorkletNode || this.stWorkletNode;
+    if (worklet && this.eqFilters.length > 0) {
+      worklet.disconnect();
+      worklet.connect(this.eqFilters[0]);
+      for (let i = 0; i < this.eqFilters.length - 1; i++) {
+        this.eqFilters[i].connect(this.eqFilters[i + 1]);
+      }
+      this.eqFilters[this.eqFilters.length - 1].connect(this.gainNode);
+    }
+  }
+
+  /** Apply current EQ state (enabled/disabled, band gains) */
+  private _applyEqState(): void {
+    for (let i = 0; i < this.eqFilters.length && i < this.eqBands.length; i++) {
+      this.eqFilters[i].gain.value = this.state.eqEnabled ? this.eqBands[i].gain : 0;
     }
   }
 
@@ -1433,7 +1475,23 @@ class AudioEngine {
 
   setEqEnabled(enabled: boolean): void {
     this.state.eqEnabled = enabled;
+    if (enabled) {
+      // Ensure audio context and worklet exist so EQ chain can be created
+      this.initAudioWorklet().then(() => {
+        this._applyEqState();
+      });
+    } else {
+      this._applyEqState();
+    }
     this.sendStateUpdate();
+  }
+
+  setEqBand(index: number, gain: number): void {
+    if (index >= 0 && index < this.eqBands.length) {
+      this.eqBands[index].gain = gain;
+      this._applyEqState();
+      this.sendStateUpdate();
+    }
   }
 
   // --- Beatport-specific methods ---
@@ -1731,6 +1789,7 @@ class AudioEngine {
         loopMode: this.state.loopMode,
         varispeed: this.state.varispeed,
         eqEnabled: this.state.eqEnabled,
+        eqBands: this.eqBands,
       });
     } catch {
       /* ignore */
@@ -1844,6 +1903,11 @@ window.addEventListener('transpose-dispatch-controls-to-content', ((event: Custo
 
   if (params.eqEnabled !== undefined) {
     audioEngine.setEqEnabled(params.eqEnabled);
+  }
+
+  if (params.eqBand !== undefined) {
+    const { index, gain } = params.eqBand as { index: number; gain: number };
+    audioEngine.setEqBand(index, gain);
   }
 
   // Handle 'transport' commands

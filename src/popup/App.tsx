@@ -5,7 +5,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AudioControls } from '../shared/AudioControls';
-import type { MediaState, ServiceWorkerMessage } from '../shared/types';
+import type { MediaState, ServiceWorkerMessage, EqBand } from '../shared/types';
+import { DEFAULT_EQ_BANDS } from '../shared/types';
 
 // --- i18n helper ---
 const t = (key: string, ...args: string[]): string => {
@@ -517,6 +518,7 @@ export const PopupApp: React.FC = () => {
     varispeed: false,
     eqEnabled: false,
   } as any);
+  const [eqBands, setEqBands] = useState<EqBand[]>(DEFAULT_EQ_BANDS.map((b) => ({ ...b })));
   const [toolbarProgressVisible, setToolbarProgressVisible] = useState(false);
   const [hasPro] = useState(false);
   const progressShowTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -694,6 +696,18 @@ export const PopupApp: React.FC = () => {
     [sendCommand],
   );
 
+  const handleEqBandChange = useCallback(
+    (index: number, gain: number) => {
+      setEqBands((prev) => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], gain };
+        return updated;
+      });
+      sendCommand({ eqBand: { index, gain } } as any);
+    },
+    [sendCommand],
+  );
+
   const handleClose = useCallback(() => {
     window.close();
   }, []);
@@ -766,6 +780,8 @@ export const PopupApp: React.FC = () => {
             onSemitoneChange={handleSemitoneChange}
             onSpeedChange={handleSpeedChange}
             onEqToggle={handleEqToggle}
+            eqBands={eqBands}
+            onEqBandChange={handleEqBandChange}
           />
         )}
         {currentPage === 'history' && <HistoryPage isSidePanel={false} />}
