@@ -15,13 +15,13 @@ export function createYouTubeAdapter(): PlatformAdapter {
       if (videos.length > 0) {
         let best: HTMLVideoElement | null = null;
         let bestArea = 0;
-        for (const v of videos) {
-          if (v.classList.contains('ad-showing') || v.closest('.ad-container')) continue;
-          const rect = v.getBoundingClientRect();
+        for (const video of videos) {
+          if (video.classList.contains('ad-showing') || video.closest('.ad-container')) continue;
+          const rect = video.getBoundingClientRect();
           const area = rect.width * rect.height;
           if (area > bestArea) {
             bestArea = area;
-            best = v;
+            best = video;
           }
         }
         if (best) return best;
@@ -31,12 +31,12 @@ export function createYouTubeAdapter(): PlatformAdapter {
       if (allVideos.length > 0) {
         let best: HTMLVideoElement | null = null;
         let bestArea = 0;
-        for (const v of allVideos) {
-          const rect = v.getBoundingClientRect();
+        for (const video of allVideos) {
+          const rect = video.getBoundingClientRect();
           const area = rect.width * rect.height;
           if (area > bestArea) {
             bestArea = area;
-            best = v;
+            best = video;
           }
         }
         return best;

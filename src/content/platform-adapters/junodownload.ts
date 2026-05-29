@@ -17,9 +17,9 @@ export function createJunoDownloadAdapter(): PlatformAdapter {
       let bestDuration = 0;
       for (const el of allMedia) {
         if (el.src && !el.src.includes('blob:')) {
-          const d = el.duration || 0;
-          if (d > bestDuration) {
-            bestDuration = d;
+          const duration = el.duration || 0;
+          if (duration > bestDuration) {
+            bestDuration = duration;
             best = el;
           }
         }

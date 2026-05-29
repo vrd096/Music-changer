@@ -12,17 +12,20 @@ import {
 function isPageUrlAsSrc(el: HTMLMediaElement): boolean {
   if (!el.src) return false;
   try {
-    const su = new URL(el.src);
-    const pu = new URL(window.location.href);
-    return su.href === pu.href || (su.origin === pu.origin && su.pathname === pu.pathname);
+    const srcUrl = new URL(el.src);
+    const pageUrl = new URL(window.location.href);
+    return (
+      srcUrl.href === pageUrl.href ||
+      (srcUrl.origin === pageUrl.origin && srcUrl.pathname === pageUrl.pathname)
+    );
   } catch {
     return false;
   }
 }
 
 function isVibesFastActive(): boolean {
-  for (const a of document.querySelectorAll<HTMLAudioElement>('audio')) {
-    if (isPageUrlAsSrc(a)) return true;
+  for (const audio of document.querySelectorAll<HTMLAudioElement>('audio')) {
+    if (isPageUrlAsSrc(audio)) return true;
   }
   return false;
 }
@@ -173,13 +176,13 @@ const DEFAULT_STATE: AudioEngineState = {
 
 export interface AudioEngineAPI {
   setSpeed(speed: number): void;
-  setSemitone(s: number): void;
-  setPitch(p: number): void;
-  setFormant(f: number): void;
-  setLoopMode(m: 'off' | 'loop' | 'loop-one'): void;
-  setVarispeed(v: boolean): void;
-  setEqEnabled(e: boolean): void;
-  setEqBand(i: number, g: number): void;
+  setSemitone(semitone: number): void;
+  setPitch(pitch: number): void;
+  setFormant(formant: number): void;
+  setLoopMode(mode: 'off' | 'loop' | 'loop-one'): void;
+  setVarispeed(varispeed: boolean): void;
+  setEqEnabled(enabled: boolean): void;
+  setEqBand(index: number, gain: number): void;
   attachToMedia(element: HTMLMediaElement, skipAudioWorklet?: boolean): void;
   prepareBeatportAudio(url: string): void;
   pauseBeatportPlayback(): void;
@@ -218,11 +221,11 @@ export function createAudioEngine(): AudioEngineAPI {
 
   console.log(`[Content] Platform adapter: ${currentAdapter.platform}`);
 
-  const isYouTubeSoundEffect = (el: HTMLMediaElement): boolean => {
-    if (!(el instanceof HTMLAudioElement)) return false;
-    const sa = el.getAttribute('src') || '',
-      sp = el.src || '';
-    return sa.includes('/s/search/audio/') || sp.includes('/s/search/audio/');
+  const isYouTubeSoundEffect = (mediaElement: HTMLMediaElement): boolean => {
+    if (!(mediaElement instanceof HTMLAudioElement)) return false;
+    const srcAttr = mediaElement.getAttribute('src') || '',
+      srcProp = mediaElement.src || '';
+    return srcAttr.includes('/s/search/audio/') || srcProp.includes('/s/search/audio/');
   };
 
   setMediaElementHandler((el: HTMLMediaElement) => {
@@ -243,8 +246,8 @@ export function createAudioEngine(): AudioEngineAPI {
     }
     pendingMediaElements.push(el);
     waitForSource(el, (readyEl: HTMLMediaElement) => {
-      const idx = pendingMediaElements.indexOf(readyEl);
-      if (idx !== -1) pendingMediaElements.splice(idx, 1);
+      const index = pendingMediaElements.indexOf(readyEl);
+      if (index !== -1) pendingMediaElements.splice(index, 1);
       if (!mediaElement) {
         if (!isYouTubeSoundEffect(readyEl)) attachToMedia(readyEl);
       }
@@ -259,41 +262,43 @@ export function createAudioEngine(): AudioEngineAPI {
   }
 
   function hijackPlaybackRate(el: HTMLMediaElement, speed: number): void {
-    const cs = Math.max(0.25, Math.min(16, speed));
+    const clampedSpeed = Math.max(0.25, Math.min(16, speed));
     if (!isBeatport) {
-      el.playbackRate = cs;
+      el.playbackRate = clampedSpeed;
       return;
     }
     if ((el as any).__tp_playbackRateHijacked) {
-      (el as any).__tp_playbackRateValue = cs;
+      (el as any).__tp_playbackRateValue = clampedSpeed;
       try {
-        el.playbackRate = cs;
+        el.playbackRate = clampedSpeed;
       } catch {}
       return;
     }
-    const nd = (window as any).___tp_nativePlaybackRateDescriptor as PropertyDescriptor | undefined;
+    const nativeDescriptor = (window as any).___tp_nativePlaybackRateDescriptor as
+      | PropertyDescriptor
+      | undefined;
     (el as any).__tp_playbackRateHijacked = true;
-    (el as any).__tp_playbackRateValue = cs;
+    (el as any).__tp_playbackRateValue = clampedSpeed;
     Object.defineProperty(el, 'playbackRate', {
       get(): number {
         return (this as any).__tp_playbackRateValue ?? 1;
       },
-      set(v: number) {
-        (this as any).__tp_playbackRateValue = v;
-        if (nd?.set) nd.set.call(this, v);
+      set(value: number) {
+        (this as any).__tp_playbackRateValue = value;
+        if (nativeDescriptor?.set) nativeDescriptor.set.call(this, value);
       },
       configurable: true,
       enumerable: true,
     });
     try {
-      el.playbackRate = cs;
+      el.playbackRate = clampedSpeed;
     } catch {}
   }
 
   function applyPlaybackRate(speed: number): void {
     if (!mediaElement) return;
-    const cs = Math.max(0.25, Math.min(16, speed));
-    mediaElement.playbackRate = cs;
+    const clampedSpeed = Math.max(0.25, Math.min(16, speed));
+    mediaElement.playbackRate = clampedSpeed;
     applyPitchState();
     if (mediaElement) hijackPlaybackRate(mediaElement, speed);
   }
@@ -343,10 +348,10 @@ export function createAudioEngine(): AudioEngineAPI {
 
   function findMediaElement(): void {
     for (let i = pendingMediaElements.length - 1; i >= 0; i--) {
-      const p = pendingMediaElements[i];
-      if (hasValidSource(p)) {
+      const pending = pendingMediaElements[i];
+      if (hasValidSource(pending)) {
         pendingMediaElements.splice(i, 1);
-        attachToMedia(p);
+        attachToMedia(pending);
         return;
       }
     }
@@ -381,18 +386,18 @@ export function createAudioEngine(): AudioEngineAPI {
   function _ensureEqChain(): void {
     if (eqFilters.length > 0) return;
     if (!audioContext || !gainNode) return;
-    for (const b of eqBands) {
-      const f = audioContext.createBiquadFilter();
-      f.type = b.type;
-      f.frequency.value = b.frequency;
-      f.gain.value = b.gain;
-      f.Q.value = b.Q;
-      eqFilters.push(f);
+    for (const band of eqBands) {
+      const filter = audioContext.createBiquadFilter();
+      filter.type = band.type;
+      filter.frequency.value = band.frequency;
+      filter.gain.value = band.gain;
+      filter.Q.value = band.Q;
+      eqFilters.push(filter);
     }
-    const w = tpWorkletNode || stWorkletNode;
-    if (w && eqFilters.length > 0) {
-      w.disconnect();
-      w.connect(eqFilters[0]);
+    const worklet = tpWorkletNode || stWorkletNode;
+    if (worklet && eqFilters.length > 0) {
+      worklet.disconnect();
+      worklet.connect(eqFilters[0]);
       for (let i = 0; i < eqFilters.length - 1; i++) eqFilters[i].connect(eqFilters[i + 1]);
       eqFilters[eqFilters.length - 1].connect(gainNode);
     }
@@ -440,8 +445,8 @@ export function createAudioEngine(): AudioEngineAPI {
           tpWorkletNode = new AudioWorkletNode(ctx, 'aw-tp-processor', {
             processorOptions: { wasmUrl: rgu('rb.wasm') },
           });
-          tpWorkletNode.port.onmessage = (e) => {
-            if (e.data?.type === 'ready') {
+          tpWorkletNode.port.onmessage = (event) => {
+            if (event.data?.type === 'ready') {
               isTpReady = true;
               applyPitchState();
             }
@@ -457,8 +462,8 @@ export function createAudioEngine(): AudioEngineAPI {
         try {
           await ctx.audioWorklet.addModule(rgu('aw-st-processor.js'));
           stWorkletNode = new AudioWorkletNode(ctx, 'aw-st-processor', { processorOptions: {} });
-          stWorkletNode.port.onmessage = (e) => {
-            if (e.data?.type === 'ready') {
+          stWorkletNode.port.onmessage = (event) => {
+            if (event.data?.type === 'ready') {
               isStReady = true;
               applyPitchState();
             }
@@ -523,43 +528,43 @@ export function createAudioEngine(): AudioEngineAPI {
       );
     }
   }
-  function setSemitone(s: number): void {
-    state.semitone = s;
-    if (s !== 0) initAudioWorklet();
+  function setSemitone(semitone: number): void {
+    state.semitone = semitone;
+    if (semitone !== 0) initAudioWorklet();
     applyPitchState();
     sendStateUpdate();
   }
-  function setPitch(p: number): void {
-    state.pitch = p;
-    if (p !== 0) initAudioWorklet();
+  function setPitch(pitch: number): void {
+    state.pitch = pitch;
+    if (pitch !== 0) initAudioWorklet();
     applyPitchState();
     sendStateUpdate();
   }
-  function setFormant(f: number): void {
-    state.formant = f;
-    if (f !== 0) initAudioWorklet();
+  function setFormant(formant: number): void {
+    state.formant = formant;
+    if (formant !== 0) initAudioWorklet();
     applyPitchState();
     sendStateUpdate();
   }
-  function setLoopMode(m: 'off' | 'loop' | 'loop-one'): void {
-    state.loopMode = m;
-    applyLoopMode(m);
+  function setLoopMode(mode: 'off' | 'loop' | 'loop-one'): void {
+    state.loopMode = mode;
+    applyLoopMode(mode);
     sendStateUpdate();
   }
-  function setVarispeed(v: boolean): void {
-    state.varispeed = v;
+  function setVarispeed(varispeed: boolean): void {
+    state.varispeed = varispeed;
     applyPlaybackRate(state.speed);
     sendStateUpdate();
   }
-  function setEqEnabled(e: boolean): void {
-    state.eqEnabled = e;
-    if (e) initAudioWorklet().then(() => _applyEqState());
+  function setEqEnabled(enabled: boolean): void {
+    state.eqEnabled = enabled;
+    if (enabled) initAudioWorklet().then(() => _applyEqState());
     else _applyEqState();
     sendStateUpdate();
   }
-  function setEqBand(i: number, g: number): void {
-    if (i >= 0 && i < eqBands.length) {
-      eqBands[i].gain = g;
+  function setEqBand(index: number, gain: number): void {
+    if (index >= 0 && index < eqBands.length) {
+      eqBands[index].gain = gain;
       _applyEqState();
       sendStateUpdate();
     }
@@ -629,13 +634,13 @@ export function createAudioEngine(): AudioEngineAPI {
     if (!ctx) return;
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     fetch(url)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.arrayBuffer();
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.arrayBuffer();
       })
-      .then((ab) => ctx.decodeAudioData(ab))
-      .then((buf) => {
-        _beatportAudioBuffer = buf;
+      .then((arrayBuffer) => ctx.decodeAudioData(arrayBuffer))
+      .then((audioBuffer) => {
+        _beatportAudioBuffer = audioBuffer;
         startBeatportPlayback();
       })
       .catch((err) => {
@@ -645,24 +650,24 @@ export function createAudioEngine(): AudioEngineAPI {
   }
 
   function _fetchBeatportAudioXHR(url: string): void {
-    const x = new XMLHttpRequest();
-    x.open('GET', url, true);
-    x.responseType = 'arraybuffer';
-    x.onload = () => {
-      if (x.status === 200 || x.status === 0) {
-        const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
-        if (ctx)
-          ctx
-            .decodeAudioData(x.response)
-            .then((b) => {
-              _beatportAudioBuffer = b;
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.responseType = 'arraybuffer';
+    xhr.onload = () => {
+      if (xhr.status === 200 || xhr.status === 0) {
+        const earlyContext = (window as any).___tp_earlyContext as AudioContext | undefined;
+        if (earlyContext)
+          earlyContext
+            .decodeAudioData(xhr.response)
+            .then((audioBuffer) => {
+              _beatportAudioBuffer = audioBuffer;
               startBeatportPlayback();
             })
             .catch(() => {});
       }
     };
-    x.onerror = () => {};
-    x.send();
+    xhr.onerror = () => {};
+    xhr.send();
   }
 
   function pauseBeatportPlayback(): void {

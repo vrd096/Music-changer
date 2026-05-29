@@ -63,22 +63,22 @@ function migrateField(obj: any, oldKey: string, newKey: string, defaultValue: an
   }
 }
 
-function normalizeMarker(m: any): Marker {
+function normalizeMarker(raw: any): Marker {
   return {
-    id: m?.id || generateId('m'),
-    time: typeof m?.time === 'number' ? m.time : 0,
-    name: typeof m?.name === 'string' ? m.name : '',
-    ...(typeof m?.color === 'string' && m.color !== '' ? { color: m.color } : {}),
+    id: raw?.id || generateId('m'),
+    time: typeof raw?.time === 'number' ? raw.time : 0,
+    name: typeof raw?.name === 'string' ? raw.name : '',
+    ...(typeof raw?.color === 'string' && raw.color !== '' ? { color: raw.color } : {}),
   };
 }
 
-function normalizeClip(c: any): Clip {
+function normalizeClip(raw: any): Clip {
   const defaults = createClip();
   return {
     ...defaults,
-    ...(c ?? {}),
-    start: typeof c?.start === 'number' ? c.start : defaults.start,
-    end: typeof c?.end === 'number' ? c.end : defaults.end,
+    ...(raw ?? {}),
+    start: typeof raw?.start === 'number' ? raw.start : defaults.start,
+    end: typeof raw?.end === 'number' ? raw.end : defaults.end,
   };
 }
 
@@ -106,10 +106,11 @@ export function normalizeMedia(media: Record<string, unknown>): MediaState {
   migrateField(result, 'reducerLowCut', 'reducerLowHz', 120);
   migrateField(result, 'reducerHighCut', 'reducerHighHz', 6000);
   for (const clip of result.clips) {
-    const c = clip as any;
-    if (typeof c.reducerDepth !== 'undefined') {
-      if (typeof c.reducerAmount === 'undefined') c.reducerAmount = c.reducerDepth;
-      delete c.reducerDepth;
+    const rawClip = clip as any;
+    if (typeof rawClip.reducerDepth !== 'undefined') {
+      if (typeof rawClip.reducerAmount === 'undefined')
+        rawClip.reducerAmount = rawClip.reducerDepth;
+      delete rawClip.reducerDepth;
     }
   }
   delete (result as any).originalKey;
@@ -126,9 +127,11 @@ export function normalizeMedia(media: Record<string, unknown>): MediaState {
 export function isDefaultMarkers(markers: Marker[]): boolean {
   return (
     markers.length === 2 &&
-    markers.every((m, i) => {
-      const et = i === 0 ? 0 : 30;
-      return m.time === et && (m.name ?? '') === '' && (m.color ?? '') === '';
+    markers.every((marker, index) => {
+      const expectedTime = index === 0 ? 0 : 30;
+      return (
+        marker.time === expectedTime && (marker.name ?? '') === '' && (marker.color ?? '') === ''
+      );
     })
   );
 }
@@ -163,11 +166,11 @@ export function sanitizeMediaForStorage(media: Partial<MediaState>): Partial<Med
     if (media.markers.length === 0) {
       result.markers = [];
     } else if (!isDefaultMarkers(media.markers)) {
-      result.markers = media.markers.map((m) => {
-        const r: Record<string, unknown> = { id: m.id, time: m.time };
-        if (m.name !== '') r.name = m.name;
-        if (m.color !== undefined && m.color !== '') r.color = m.color;
-        return r;
+      result.markers = media.markers.map((marker) => {
+        const entry: Record<string, unknown> = { id: marker.id, time: marker.time };
+        if (marker.name !== '') entry.name = marker.name;
+        if (marker.color !== undefined && marker.color !== '') entry.color = marker.color;
+        return entry;
       });
     }
   }
@@ -226,25 +229,25 @@ export function sanitizeMediaForStorage(media: Partial<MediaState>): Partial<Med
 }
 
 function sanitizeClip(clip: Clip): Record<string, unknown> {
-  const d = createClip();
-  const r: Record<string, unknown> = { id: clip.id, start: clip.start, end: clip.end };
-  if (clip.name !== '') r.name = clip.name;
-  if (clip.enabled !== d.enabled) r.enabled = clip.enabled;
-  if (clip.semitone !== undefined && clip.semitone !== 0) r.semitone = clip.semitone;
-  if (clip.pitch !== undefined && clip.pitch !== 0) r.pitch = clip.pitch;
-  if (clip.speed !== undefined && clip.speed !== 1) r.speed = clip.speed;
-  if (clip.formant !== undefined && clip.formant !== 0) r.formant = clip.formant;
+  const defaults = createClip();
+  const result: Record<string, unknown> = { id: clip.id, start: clip.start, end: clip.end };
+  if (clip.name !== '') result.name = clip.name;
+  if (clip.enabled !== defaults.enabled) result.enabled = clip.enabled;
+  if (clip.semitone !== undefined && clip.semitone !== 0) result.semitone = clip.semitone;
+  if (clip.pitch !== undefined && clip.pitch !== 0) result.pitch = clip.pitch;
+  if (clip.speed !== undefined && clip.speed !== 1) result.speed = clip.speed;
+  if (clip.formant !== undefined && clip.formant !== 0) result.formant = clip.formant;
   if (clip.reducerAmount !== undefined && clip.reducerAmount !== 0)
-    r.reducerAmount = clip.reducerAmount;
-  if (clip.repetitions !== d.repetitions) r.repetitions = clip.repetitions;
-  if (clip.countIn !== d.countIn) r.countIn = clip.countIn;
-  return r;
+    result.reducerAmount = clip.reducerAmount;
+  if (clip.repetitions !== defaults.repetitions) result.repetitions = clip.repetitions;
+  if (clip.countIn !== defaults.countIn) result.countIn = clip.countIn;
+  return result;
 }
 
 export function isBlockedUrl(url: string | URL | null | undefined): boolean {
   if (!url) return true;
   try {
-    const u = typeof url === 'string' ? new URL(url) : url;
+    const parsedUrl = typeof url === 'string' ? new URL(url) : url;
     const blockedProtocols = [
       'chrome:',
       'edge:',
@@ -304,13 +307,18 @@ export function isBlockedUrl(url: string | URL | null | undefined): boolean {
       'https://accounts.youtube.com/RotateCookiesPage',
     ];
     const allowedHosts = ['youtube.googleapis.com'];
-    if (allowedHosts.some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`))) return false;
+    if (
+      allowedHosts.some(
+        (host) => parsedUrl.hostname === host || parsedUrl.hostname.endsWith(`.${host}`),
+      )
+    )
+      return false;
     return (
-      !u ||
-      !u.hostname ||
-      blockedProtocols.includes(u.protocol) ||
-      blockedHosts.some((h) => u.hostname.includes(h)) ||
-      blockedUrls.some((bu) => u.href.startsWith(bu))
+      !parsedUrl ||
+      !parsedUrl.hostname ||
+      blockedProtocols.includes(parsedUrl.protocol) ||
+      blockedHosts.some((host) => parsedUrl.hostname.includes(host)) ||
+      blockedUrls.some((blockedUrl) => parsedUrl.href.startsWith(blockedUrl))
     );
   } catch {
     return true;

@@ -20,9 +20,9 @@ export function createSoundCloudAdapter(): PlatformAdapter {
         let bestDuration = 0;
         for (const audio of audios) {
           if (!audio.src && !audio.srcObject) continue;
-          const d = audio.duration || 0;
-          if (d > bestDuration) {
-            bestDuration = d;
+          const duration = audio.duration || 0;
+          if (duration > bestDuration) {
+            bestDuration = duration;
             best = audio;
           }
         }

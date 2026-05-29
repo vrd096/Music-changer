@@ -36,7 +36,7 @@ function safeSerialize(value: unknown, depth = 0, seen = new WeakSet<object>()):
   seen.add(obj);
 
   if (Array.isArray(value)) {
-    return value.map((v) => safeSerialize(v, depth + 1, seen));
+    return value.map((item) => safeSerialize(item, depth + 1, seen));
   }
 
   const result: Record<string, unknown> = {};
@@ -67,7 +67,7 @@ function parseLogEntry(level: 'warn' | 'error', args: unknown[]): Omit<LogEntry,
     event: level,
     msg:
       args
-        .filter((a) => typeof a === 'string')
+        .filter((arg) => typeof arg === 'string')
         .join(' ')
         .trim() || undefined,
     ctx: args,

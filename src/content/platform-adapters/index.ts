@@ -16,9 +16,9 @@ const adapters: PlatformAdapter[] = [
 ];
 
 export function getAdapter(url?: string): PlatformAdapter {
-  const u = url || window.location.href;
+  const targetUrl = url || window.location.href;
   for (const adapter of adapters) {
-    if (adapter.canHandle(u)) return adapter;
+    if (adapter.canHandle(targetUrl)) return adapter;
   }
   return adapters[adapters.length - 1];
 }

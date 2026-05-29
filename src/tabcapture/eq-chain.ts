@@ -5,7 +5,7 @@ export interface EqBand {
   Q: number;
 }
 
-export function createEqChain(ctx: AudioContext): BiquadFilterNode[] {
+export function createEqChain(audioContext: AudioContext): BiquadFilterNode[] {
   const bands: EqBand[] = [
     { type: 'highpass', frequency: 30, gain: 0, Q: 0.7 },
     { type: 'lowshelf', frequency: 120, gain: 0, Q: 0.7 },
@@ -15,28 +15,28 @@ export function createEqChain(ctx: AudioContext): BiquadFilterNode[] {
     { type: 'highshelf', frequency: 9000, gain: 0, Q: 0.7 },
   ];
 
-  const filters: BiquadFilterNode[] = bands.map((b) => {
-    const f = ctx.createBiquadFilter();
-    f.type = b.type;
-    f.frequency.value = b.frequency;
-    f.gain.value = b.gain;
-    f.Q.value = b.Q;
-    return f;
+  const filters: BiquadFilterNode[] = bands.map((band) => {
+    const filter = audioContext.createBiquadFilter();
+    filter.type = band.type;
+    filter.frequency.value = band.frequency;
+    filter.gain.value = band.gain;
+    filter.Q.value = band.Q;
+    return filter;
   });
 
-  for (let i = 0; i < filters.length - 1; i++) {
-    filters[i].connect(filters[i + 1]);
+  for (let index = 0; index < filters.length - 1; index++) {
+    filters[index].connect(filters[index + 1]);
   }
 
   if (filters.length > 0) {
-    const compressor = ctx.createDynamicsCompressor();
+    const compressor = audioContext.createDynamicsCompressor();
     compressor.threshold.value = -3;
     compressor.knee.value = 0;
     compressor.ratio.value = 20;
     compressor.attack.value = 0.001;
     compressor.release.value = 0.05;
     filters[filters.length - 1].connect(compressor);
-    compressor.connect(ctx.destination);
+    compressor.connect(audioContext.destination);
   }
 
   return filters;
@@ -49,9 +49,9 @@ export function applyEqBands(
   audioContext: AudioContext | null,
 ): void {
   if (eqFilters.length && eqBands && audioContext) {
-    for (let i = 0; i < eqFilters.length && i < eqBands.length; i++) {
-      const filter = eqFilters[i];
-      const band = eqBands[i];
+    for (let index = 0; index < eqFilters.length && index < eqBands.length; index++) {
+      const filter = eqFilters[index];
+      const band = eqBands[index];
       if (filter.type !== band.type) filter.type = band.type;
       if (filter.frequency.value !== band.frequency) filter.frequency.value = band.frequency;
       if (filter.Q.value !== band.Q) filter.Q.value = band.Q;

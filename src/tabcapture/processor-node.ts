@@ -45,7 +45,9 @@ export function createProcessorNode(
           processorOptions: { key: appKey, checksum: appCheckSum },
         });
       } else {
-        const wasmBytes = await fetch(scriptPath + 'rb.wasm').then((r) => r.arrayBuffer());
+        const wasmBytes = await fetch(scriptPath + 'rb.wasm').then((response) =>
+          response.arrayBuffer(),
+        );
         if (!wasmBytes.byteLength) throw new Error('WASM bytes empty');
         await audioCtx.audioWorklet.addModule(scriptPath + 'aw-tp-processor.js');
         return new AudioWorkletNode(audioCtx, 'aw-tp-processor', {
@@ -91,8 +93,8 @@ export function createProcessorNode(
       const paramMap = input.parameters;
       const setParam = (name: string, value: number | boolean | undefined) => {
         if (value === undefined) return;
-        const p = paramMap.get(name);
-        if (p) p.value = typeof value === 'boolean' ? (value ? 1 : 0) : value;
+        const param = paramMap.get(name);
+        if (param) param.value = typeof value === 'boolean' ? (value ? 1 : 0) : value;
       };
       setParam('pitch', params.pitch);
       setParam('semitone', params.semitone);

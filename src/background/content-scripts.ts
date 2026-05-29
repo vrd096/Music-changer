@@ -8,7 +8,9 @@ export async function registerContentScripts(): Promise<void> {
   const perms = (await chrome.permissions.getAll()).origins || [];
   const allUrls = perms.includes('<all_urls>') ? ['*://*/*'] : perms;
   const matches = allUrls
-    .filter((u) => u.startsWith('*://') || u.startsWith('http://') || u.startsWith('https://'))
+    .filter(
+      (url) => url.startsWith('*://') || url.startsWith('http://') || url.startsWith('https://'),
+    )
     .sort();
 
   if (matches.length === 0) {
@@ -42,7 +44,7 @@ export async function registerContentScripts(): Promise<void> {
 
   const scriptIds = new Set([dispatcherId, contentId]);
   const registered = await chrome.scripting.getRegisteredContentScripts();
-  const registeredIds = new Set(registered.map((s) => s.id));
+  const registeredIds = new Set(registered.map((script) => script.id));
   const hasUpdate = !!chrome.scripting.updateContentScripts;
 
   for (const script of scripts) {
@@ -58,7 +60,9 @@ export async function registerContentScripts(): Promise<void> {
     }
   }
 
-  const toRemove = registered.filter((s) => !scriptIds.has(s.id)).map((s) => s.id);
+  const toRemove = registered
+    .filter((script) => !scriptIds.has(script.id))
+    .map((script) => script.id);
   if (toRemove.length > 0) {
     await chrome.scripting.unregisterContentScripts({ ids: toRemove });
   }

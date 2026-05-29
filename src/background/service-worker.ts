@@ -184,23 +184,23 @@ function processMessage(
     }
 
     if (contentMsg.type === 'highlight-toolbar-icon') {
-      const tId = Number(contentMsg.tabId);
-      if (Number.isFinite(tId) && tId > 0) highlightToolbarIcon(tId);
+      const targetTabId = Number(contentMsg.tabId);
+      if (Number.isFinite(targetTabId) && targetTabId > 0) highlightToolbarIcon(targetTabId);
       return;
     }
 
     if (contentMsg.type === 'enable-tab-connect') {
-      const tId = Number(contentMsg.tabId ?? tabId);
-      if (!Number.isFinite(tId) || tId <= 0) return;
-      connectedTabs.add(tId);
-      if (isSidePanelMode()) ensureSidePanelForTab(tId, true);
+      const targetTabId = Number(contentMsg.tabId ?? tabId);
+      if (!Number.isFinite(targetTabId) || targetTabId <= 0) return;
+      connectedTabs.add(targetTabId);
+      if (isSidePanelMode()) ensureSidePanelForTab(targetTabId, true);
 
       const url = typeof contentMsg.url === 'string' ? contentMsg.url : senderUrl;
       sendWithRetry(
         {
           sender: 'service-worker',
           command: 'connect',
-          tabId: tId,
+          tabId: targetTabId,
           isNavigation: true,
           altUrl: url,
           altTitle: typeof contentMsg.title === 'string' ? contentMsg.title : undefined,
@@ -324,8 +324,8 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
   }
 
   if (area === 'local' && changes.sidepanelOnceTabId !== undefined) {
-    const val = changes.sidepanelOnceTabId?.newValue;
-    sidePanelOnceTabId = typeof val === 'number' ? val : null;
+    const value = changes.sidepanelOnceTabId?.newValue;
+    sidePanelOnceTabId = typeof value === 'number' ? value : null;
   }
 });
 

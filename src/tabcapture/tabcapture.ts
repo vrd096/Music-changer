@@ -73,19 +73,19 @@ const streamId = urlParams.get('streamId') || undefined;
 // ---------------------------------------------------------------------------
 
 /** Serialize an error/object safely */
-function serializeError(e: unknown): unknown {
-  if (e == null) return e;
-  if (e instanceof Error) {
-    return { name: e.name, message: e.message, stack: e.stack };
+function serializeError(error: unknown): unknown {
+  if (error == null) return error;
+  if (error instanceof Error) {
+    return { name: error.name, message: error.message, stack: error.stack };
   }
-  if (typeof e === 'object') {
+  if (typeof error === 'object') {
     try {
-      return JSON.parse(JSON.stringify(e));
+      return JSON.parse(JSON.stringify(error));
     } catch {
-      return String(e);
+      return String(error);
     }
   }
-  return String(e);
+  return String(error);
 }
 
 /** Format a user-friendly error message */
@@ -179,9 +179,9 @@ function applyLocalEqBands(eqBands: EqBand[] | undefined, eqEnabled: boolean | u
   }
 
   if (eqFilters.length && eqBands && audioContext) {
-    for (let i = 0; i < eqFilters.length && i < eqBands.length; i++) {
-      const filter = eqFilters[i];
-      const band = eqBands[i];
+    for (let index = 0; index < eqFilters.length && index < eqBands.length; index++) {
+      const filter = eqFilters[index];
+      const band = eqBands[index];
       if (filter.type !== band.type) filter.type = band.type;
       if (filter.frequency.value !== band.frequency) filter.frequency.value = band.frequency;
       if (filter.Q.value !== band.Q) filter.Q.value = band.Q;
@@ -207,7 +207,7 @@ async function initCapture(): Promise<void> {
         const stream = await new Promise<MediaStream | null>(async (resolve) => {
           if (streamId) {
             try {
-              const s = await navigator.mediaDevices.getUserMedia({
+              const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                   mandatory: {
                     chromeMediaSource: 'tab' as any,
@@ -216,7 +216,7 @@ async function initCapture(): Promise<void> {
                 } as any,
                 video: false,
               });
-              return resolve(s || null);
+              return resolve(stream || null);
             } catch (err: any) {
               const errMsg = formatErrorMessage(err?.message || String(err));
               initError = errMsg;
