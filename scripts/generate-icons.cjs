@@ -1,84 +1,117 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
-
 const iconsDir = path.join(__dirname, '..', 'src', 'assets', 'icons');
 
 function createChunk(type, data) {
-  const length = Buffer.alloc(4);
-  length.writeUInt32BE(data.length, 0);
-  const typeBuffer = Buffer.from(type, 'ascii');
-  const crcData = Buffer.concat([typeBuffer, data]);
-  const crc = crc32(crcData);
-  const crcBuffer = Buffer.alloc(4);
-  crcBuffer.writeUInt32BE(crc, 0);
-  return Buffer.concat([length, typeBuffer, data, crcBuffer]);
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length, 0);
+  const tb = Buffer.from(type, 'ascii');
+  const crc = crc32(Buffer.concat([tb, data]));
+  const cb = Buffer.alloc(4);
+  cb.writeUInt32BE(crc, 0);
+  return Buffer.concat([len, tb, data, cb]);
 }
-
 function crc32(buf) {
-  let crc = 0xffffffff;
+  let c = 0xffffffff;
   for (let i = 0; i < buf.length; i++) {
-    crc ^= buf[i];
-    for (let j = 0; j < 8; j++) {
-      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-    }
+    c ^= buf[i];
+    for (let j = 0; j < 8; j++) c = (c >>> 1) ^ (c & 1 ? 0xedb88320 : 0);
   }
-  return (crc ^ 0xffffffff) >>> 0;
+  return (c ^ 0xffffffff) >>> 0;
 }
 
-function createMinimalPNG(size) {
-  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+function createWaveformPNG(size) {
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = createChunk(
+    'IHDR',
+    (() => {
+      const d = Buffer.alloc(13);
+      d.writeUInt32BE(size, 0);
+      d.writeUInt32BE(size, 4);
+      d.writeUInt8(8, 8);
+      d.writeUInt8(6, 9);
+      return d;
+    })(),
+  );
 
-  const ihdrData = Buffer.alloc(13);
-  ihdrData.writeUInt32BE(size, 0);
-  ihdrData.writeUInt32BE(size, 4);
-  ihdrData.writeUInt8(8, 8);
-  ihdrData.writeUInt8(2, 9);
-  ihdrData.writeUInt8(0, 10);
-  ihdrData.writeUInt8(0, 11);
-  ihdrData.writeUInt8(0, 12);
-  const ihdr = createChunk('IHDR', ihdrData);
+  const raw = Buffer.alloc(size * (1 + size * 4));
 
-  const rawData = Buffer.alloc(size * (1 + size * 3));
+  // 7 waveform bars matching SVG logo proportions
+  // SVG: x=[0,2.5,5,7.5,10,12.5,15], w=1.5 each, total=18
+  // Heights relative to full: [2/14, 8/14, 12/14, 14/14, 10/14, 6/14, 4/14]
+  const barCount = 7;
+  const totalBarsW = 18;
+  const barW = 1.5;
+  const barHeights = [2, 8, 12, 14, 10, 6, 4]; // out of 14
+  const maxH = 14;
+
+  // Padding: 15% on each side
+  const pad = Math.round(size * 0.12);
+  const availW = size - pad * 2;
+  const availH = size - pad * 2;
+  const scaleW = availW / totalBarsW;
+  const scaleH = availH / maxH;
+  const baseY = pad + availH; // bottom of bars
+
+  const purple = [0x6e, 0x40, 0xc9];
+  const blue = [0x58, 0xa6, 0xff];
+
   for (let y = 0; y < size; y++) {
-    const rowOffset = y * (1 + size * 3);
-    rawData[rowOffset] = 0;
+    const ro = y * (1 + size * 4);
+    raw[ro] = 0;
     for (let x = 0; x < size; x++) {
-      const pixelOffset = rowOffset + 1 + x * 3;
-      const t = x / (size - 1 || 1);
-      // Gradient: #6e40c9 (purple) to #58a6ff (blue)
-      const r = Math.round(0x6e - (0x6e - 0x58) * t);
-      const g = Math.round(0x40 + (0xa6 - 0x40) * t);
-      const b = Math.round(0xc9 + (0xff - 0xc9) * t);
-      rawData[pixelOffset] = r;
-      rawData[pixelOffset + 1] = g;
-      rawData[pixelOffset + 2] = b;
+      const po = ro + 1 + x * 4;
+      let hit = false;
+      let cr = 0,
+        cg = 0,
+        cb = 0;
+
+      for (let i = 0; i < barCount; i++) {
+        const bx = pad + (i * 2.5 + 0.25) * scaleW;
+        const bw = barW * scaleW;
+        if (x >= bx && x < bx + bw) {
+          const h = barHeights[i] * scaleH;
+          const by = baseY - h;
+          if (y >= by && y <= baseY) {
+            hit = true;
+            const t = i / (barCount - 1);
+            cr = Math.round(purple[0] + (blue[0] - purple[0]) * t);
+            cg = Math.round(purple[1] + (blue[1] - purple[1]) * t);
+            cb = Math.round(purple[2] + (blue[2] - purple[2]) * t);
+          }
+          break;
+        }
+      }
+
+      if (hit) {
+        raw[po] = cr;
+        raw[po + 1] = cg;
+        raw[po + 2] = cb;
+        raw[po + 3] = 255;
+      } else {
+        raw[po] = 0;
+        raw[po + 1] = 0;
+        raw[po + 2] = 0;
+        raw[po + 3] = 0;
+      }
     }
   }
 
-  const compressed = zlib.deflateSync(rawData);
-  const idat = createChunk('IDAT', compressed);
+  const idat = createChunk('IDAT', zlib.deflateSync(raw));
   const iend = createChunk('IEND', Buffer.alloc(0));
-
-  return Buffer.concat([signature, ihdr, idat, iend]);
+  return Buffer.concat([sig, ihdr, idat, iend]);
 }
 
 const sizes = {
-  'icon-16-32x32.png': 16,
+  'icon-16-32x32.png': 32,
   'icon-32x32.png': 32,
   'icon-48x48.png': 48,
   'icon-128x128.png': 128,
   'icon-256x256.png': 256,
 };
-
-for (const [filename, size] of Object.entries(sizes)) {
-  const filepath = path.join(iconsDir, filename);
-  const backupPath = filepath + '.backup';
-  if (!fs.existsSync(backupPath)) {
-    fs.copyFileSync(filepath, backupPath);
-  }
-  const png = createMinimalPNG(size);
-  fs.writeFileSync(filepath, png);
-  console.log('Created: ' + filename + ' (' + size + 'x' + size + ')');
+for (const [fn, sz] of Object.entries(sizes)) {
+  fs.writeFileSync(path.join(iconsDir, fn), createWaveformPNG(sz));
+  console.log('Created: ' + fn + ' (' + sz + 'x' + sz + ')');
 }
-console.log('Done. Old icons backed up as .backup');
+console.log('Done.');

@@ -202,13 +202,6 @@ export const SidePanelApp: React.FC = () => {
           title="Сменить тему оформления">
           {sceneIcons[sceneIndex % sceneIcons.length]}
         </button>
-        <button
-          className={tbBtn}
-          style={{ color: 'var(--text-secondary)' }}
-          onClick={() => setCurrentPage('history')}
-          title="История">
-          📋
-        </button>
       </div>
       <span
         className="font-semibold tracking-[0.3px] uppercase text-center flex-1"

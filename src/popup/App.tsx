@@ -195,13 +195,6 @@ export const PopupApp: React.FC = () => {
       </div>
       <div className="flex items-center gap-1">
         <button
-          onClick={() => setCurrentPage('history')}
-          className="w-7 h-7 rounded-full border-0 bg-transparent cursor-pointer flex items-center justify-center text-[13px]"
-          style={{ color: 'var(--text-secondary)' }}
-          title="История">
-          📋
-        </button>
-        <button
           onClick={() => setCurrentPage('settings')}
           className="w-7 h-7 rounded-full border-0 bg-transparent cursor-pointer flex items-center justify-center text-[13px]"
           style={{ color: 'var(--text-secondary)' }}
