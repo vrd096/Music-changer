@@ -121,6 +121,12 @@ export const PopupApp: React.FC = () => {
         else {
           setConnectionStatus('connected');
           if (msg.tabId) activeTabIdRef.current = msg.tabId;
+          if (msg.altUrl) {
+            const url = msg.altUrl;
+            setMediaType(
+              url.includes('youtube.com') || url.includes('youtu.be') ? 'video' : 'audio',
+            );
+          }
         }
       }
     };
