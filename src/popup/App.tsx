@@ -45,6 +45,7 @@ export const PopupApp: React.FC = () => {
   const [detectedKey, setDetectedKey] = useState<string | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
 
+  const [uiMode, setUiMode] = useState<string>('popup');
   const [visibleComponents, setVisibleComponents] = useState<Record<string, boolean>>({
     tonality: true,
     speed: true,
@@ -56,7 +57,8 @@ export const PopupApp: React.FC = () => {
   const permissionJustGrantedRef = useRef(false);
 
   useEffect(() => {
-    chrome.storage.sync.get('visibleComponents', (data) => {
+    chrome.storage.sync.get(['uiMode', 'visibleComponents'], (data) => {
+      if (data.uiMode) setUiMode(data.uiMode);
       if (data.visibleComponents)
         setVisibleComponents((prev) => ({ ...prev, ...data.visibleComponents }));
     });
@@ -196,8 +198,8 @@ export const PopupApp: React.FC = () => {
       <div className="flex items-center gap-1">
         <button
           onClick={() => setCurrentPage('settings')}
-          className="w-7 h-7 rounded-full border-0 bg-transparent cursor-pointer flex items-center justify-center text-[13px]"
-          style={{ color: 'var(--text-secondary)' }}
+          className="w-7 h-7 rounded-full border-0 bg-transparent cursor-pointer flex items-center justify-center"
+          style={{ color: 'var(--text-secondary)', fontSize: '15px' }}
           title="Настройки">
           ⚙
         </button>
@@ -335,7 +337,13 @@ export const PopupApp: React.FC = () => {
             color: 'var(--text-primary)',
             borderColor: 'var(--border)',
           }}
-          onChange={(e) => chrome.storage.sync.set({ uiMode: e.target.value })}>
+          value={uiMode}
+          onChange={(e) => {
+            const mode = e.target.value;
+            setUiMode(mode);
+            chrome.storage.sync.set({ uiMode: mode });
+            if (mode === 'sidepanel') window.close();
+          }}>
           <option value="popup">Popup</option>
           <option value="sidepanel">Side Panel</option>
         </select>

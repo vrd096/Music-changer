@@ -321,33 +321,12 @@ chrome.action.onClicked.addListener(async (tab) => {
   connectedTabs.add(tab.id);
 
   if (isSidePanelMode()) {
-    await ensureSidePanelForTab(tab.id, true);
-    chrome.sidePanel
-      .open({ tabId: tab.id })
-      .then(() => {
-        setTimeout(async () => {
-          await sendWithRetry(msg, 'action-click', 1000);
-        }, 100);
-      })
-      .catch(async (err) => {
-        runtimeLog.error('[SW] Error opening side panel', err);
-        if (String(err?.message || err).includes('No active side panel')) {
-          try {
-            const tId = tab.id!;
-            await chrome.sidePanel.setOptions({
-              tabId: tId,
-              path: 'sidepanel/index.html',
-              enabled: true,
-            });
-            sidePanelTabs.add(tId);
-            await chrome.sidePanel.open({ tabId: tId });
-          } catch (retryErr) {
-            runtimeLog.error('[SW] Side panel open retry failed', retryErr);
-          }
-        } else {
-          runtimeLog.error('[SW] Error opening side panel', err);
-        }
-      });
+    // Callback form preserves user gesture (await would break it)
+    const tId = tab.id!;
+    chrome.sidePanel.setOptions({ tabId: tId, path: 'sidepanel/index.html', enabled: true }, () => {
+      chrome.sidePanel.open({ tabId: tId });
+    });
+    return;
   } else {
     await chrome.action.setPopup({ tabId: tab.id, popup: 'popup/index.html' });
     chrome.action.openPopup().catch((err) => {

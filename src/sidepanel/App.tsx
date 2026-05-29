@@ -3,7 +3,7 @@
 // ============================================================
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { MediaState, ServiceWorkerMessage, EqBand } from '../shared/types';
+import type { ServiceWorkerMessage, EqBand } from '../shared/types';
 import { DEFAULT_EQ_BANDS } from '../shared/types';
 import { useTheme } from '../shared/hooks/useTheme';
 import { HistoryPage } from '../shared/components/HistoryPage';
@@ -34,37 +34,32 @@ export const SidePanelApp: React.FC = () => {
   >('connecting');
   const [pendingHostUrl, setPendingHostUrl] = useState<string | null>(null);
   const [powerOn, setPowerOn] = useState(true);
-
   const [semitone, setSemitone] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [bpm, setBpm] = useState(128);
   const [mediaType, setMediaType] = useState<'audio' | 'video'>('audio');
   const [eqEnabled, setEqEnabled] = useState(false);
   const [eqBands, setEqBands] = useState<EqBand[]>(DEFAULT_EQ_BANDS.map((b) => ({ ...b })));
-
   const [detectedBpm, setDetectedBpm] = useState<number | null>(null);
   const [detectedKey, setDetectedKey] = useState<string | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
-
+  const [uiMode, setUiMode] = useState<string>('popup');
   const [visibleComponents, setVisibleComponents] = useState<Record<string, boolean>>({
     tonality: true,
     speed: true,
     eq: true,
     bpmkey: true,
   });
-  const [sceneIndex, setSceneIndex] = useState(0);
-  const sceneIcons = ['☀️', '🌙', '🖥️', '💻'];
-
   const activeTabIdRef = useRef<number | null>(null);
   const permissionJustGrantedRef = useRef(false);
 
   useEffect(() => {
-    chrome.storage.sync.get('visibleComponents', (data) => {
+    chrome.storage.sync.get(['uiMode', 'visibleComponents'], (data) => {
+      if (data.uiMode) setUiMode(data.uiMode);
       if (data.visibleComponents)
         setVisibleComponents((prev) => ({ ...prev, ...data.visibleComponents }));
     });
   }, []);
-
   const getActiveTabId = useCallback(async (): Promise<number | null> => {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -180,76 +175,62 @@ export const SidePanelApp: React.FC = () => {
       return updated;
     });
   }, []);
-  const cycleScene = useCallback(() => setSceneIndex((p) => (p + 1) % sceneIcons.length), []);
   const togglePower = useCallback(() => {
     setPowerOn((p) => !p);
     sendCommand({ command: 'toggle-power' });
   }, [sendCommand]);
 
   const tbBtn =
-    'w-7 h-7 rounded-full border-0 bg-transparent cursor-pointer flex items-center justify-center text-[14px]';
+    'w-6 h-6 rounded-full border-0 bg-transparent cursor-pointer flex items-center justify-center text-[13px] flex-shrink-0';
 
   const renderHeader = () => (
     <header
-      className="flex items-center justify-between px-2.5 py-2 border-b gap-1 flex-shrink-0"
-      style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', height: '40px' }}>
-      <div className="flex items-center gap-0.5">
+      className="flex items-center px-2 py-2 border-b gap-1.5 flex-shrink-0"
+      style={{
+        background: 'var(--bg-card)',
+        borderColor: 'var(--border)',
+        height: '40px',
+        minWidth: 0,
+        maxWidth: '100%',
+        overflow: 'hidden',
+      }}>
+      <div className="flex items-center gap-1.5 min-w-0 flex-1">
         <Logo />
-        <button
-          className={tbBtn}
-          style={{ color: 'var(--text-secondary)' }}
-          onClick={cycleScene}
-          title="Сменить тему оформления">
-          {sceneIcons[sceneIndex % sceneIcons.length]}
-        </button>
-      </div>
-      <span
-        className="font-semibold tracking-[0.3px] uppercase text-center flex-1"
-        style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-        MUSIC PITCH CHANGER
-      </span>
-      <div className="flex items-center gap-0.5">
-        <button
-          className={tbBtn}
-          style={{ color: 'var(--text-secondary)' }}
-          onClick={() => sendCommand({ command: 'save-media' })}
-          title="Сохранить настройки трека">
-          💾
-        </button>
         <span
-          className={tbBtn}
-          style={{ color: 'var(--text-muted)', opacity: 0.5, cursor: 'not-allowed' }}
-          title="Поделиться (PRO)">
-          ↗
+          className="font-semibold tracking-[0.3px] uppercase truncate"
+          style={{ fontSize: '11px', color: 'var(--text-primary)' }}>
+          MUSIC PITCH CHANGER
         </span>
+      </div>
+      <div className="flex items-center gap-1.5 flex-shrink-0">
         <button
-          className={tbBtn}
+          className={tbBtn + ' text-[11px] font-semibold'}
           style={{ color: powerOn ? 'var(--accent-secondary)' : 'var(--text-muted)' }}
           onClick={togglePower}
           title={powerOn ? 'Выключить обработку' : 'Включить обработку'}>
-          ⏻
+          {powerOn ? 'ON' : 'OFF'}
         </button>
         <button
-          className={tbBtn}
+          className={tbBtn + ' text-[15px]'}
           style={{ color: 'var(--text-secondary)' }}
           onClick={() => setCurrentPage('settings')}
           title="Настройки">
           ⚙
         </button>
-        <span style={{ fontSize: '10px', marginLeft: '2px' }}>{isDark ? '🌙' : '☀️'}</span>
+        <span style={{ fontSize: '11px' }}>{isDark ? '🌙' : '☀️'}</span>
         <div
           onClick={toggleTheme}
-          className="relative cursor-pointer rounded-full"
+          className="relative cursor-pointer rounded-full flex-shrink-0"
           style={{
-            width: '20px',
-            height: '10px',
+            width: '22px',
+            height: '12px',
             background: isDark ? 'var(--toggle-active-bg)' : 'var(--toggle-bg)',
           }}>
           <div
             className="absolute top-0.5 rounded-full transition-all"
             style={{
-              width: '6px',
-              height: '6px',
+              width: '8px',
+              height: '8px',
               background: 'var(--toggle-knob)',
               left: isDark ? '12px' : '2px',
             }}
@@ -260,7 +241,7 @@ export const SidePanelApp: React.FC = () => {
   );
 
   const renderMain = () => (
-    <div className="flex-1 px-4 py-3.5" style={{ overflowY: 'auto' }}>
+    <div className="flex-1 p-3" style={{ overflowY: 'auto' }}>
       {pendingHostUrl && (
         <div
           className="flex flex-col items-center justify-center gap-3 py-10 text-center"
@@ -316,7 +297,7 @@ export const SidePanelApp: React.FC = () => {
   );
 
   const renderSettings = () => (
-    <div className="flex-1 px-4 py-3.5" style={{ overflowY: 'auto' }}>
+    <div className="flex-1 p-3" style={{ overflowY: 'auto' }}>
       <button
         onClick={() => setCurrentPage('main')}
         className="flex items-center gap-1 mb-3 border-0 bg-transparent cursor-pointer"
@@ -367,7 +348,11 @@ export const SidePanelApp: React.FC = () => {
             color: 'var(--text-primary)',
             borderColor: 'var(--border)',
           }}
-          onChange={(e) => chrome.storage.sync.set({ uiMode: e.target.value })}>
+          value={uiMode}
+          onChange={(e) => {
+            setUiMode(e.target.value);
+            chrome.storage.sync.set({ uiMode: e.target.value });
+          }}>
           <option value="popup">Popup</option>
           <option value="sidepanel">Side Panel</option>
         </select>
