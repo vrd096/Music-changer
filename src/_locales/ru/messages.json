@@ -1,11 +1,11 @@
 {
-   "appDesc": {
-      "message": "Меняйте тональность и скорость музыки и зацикливайте фрагменты прямо на YouTube, Spotify и многих других потоковых платформах."
-   },
-   "appName": {
-      "message": "Transpose ▲▼ pitch ▹ speed ▹ loop"
-   },
-   "appShortName": {
-      "message": "Transpose ▲▼"
-   }
+  "appDesc": {
+    "message": "Меняйте тональность, скорость и эквалайзер музыки. Определение BPM и тональности. Для диджеев и музыкантов."
+  },
+  "appName": {
+    "message": "Music Pitch Changer — тональность \u00b7 скорость \u00b7 эквалайзер"
+  },
+  "appShortName": {
+    "message": "Music Pitch Changer"
+  }
 }

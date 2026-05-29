@@ -1,29 +1,33 @@
 {
-  "name": "transpose-react",
-  "version": "6.4.0",
+  "name": "music-pitch-changer",
+  "version": "1.0.0",
   "private": true,
-  "description": "Transpose ▲▼ pitch ▹ speed ▹ loop — Chrome Extension (React port)",
+  "description": "Music Pitch Changer — change pitch, speed, EQ and key of any audio on the web",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
     "dev": "node scripts/build.mjs --watch",
     "clean": "node -e \"const{rmSync,existsSync}=require('fs');const p='./dist';if(existsSync(p))rmSync(p,{recursive:true,force:true});console.log('Cleaned dist/');\"",
-    "package": "cd dist && bestzip ../transpose-react-v6.4.0.zip *"
+    "package": "cd dist && bestzip ../music-pitch-changer-v1.0.0.zip *"
   },
   "keywords": [
     "chrome-extension",
+    "music-pitch-changer",
     "pitch-shifter",
     "audio",
-    "transpose",
+    "equalizer",
     "speed-control",
+    "bpm-detector",
     "react"
   ],
   "license": "UNLICENSED",
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
     "@types/chrome": "^0.0.260",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
+    "tailwindcss": "^4.3.0",
     "typescript": "^5.3.3",
     "vite": "^5.4.21",
     "vite-plugin-static-copy": "^1.0.6"

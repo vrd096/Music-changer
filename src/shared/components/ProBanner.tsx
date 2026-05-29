@@ -30,7 +30,7 @@ export const ProBannerSidepanel: React.FC = () => (
 
 export const ProBannerFree: React.FC = () => (
   <div className="pro-banner-free">
-    <span>Transpose ▲▼</span>
+    <span>MUSIC PITCH CHANGER</span>
     <button className="pro-banner-button">Get PRO</button>
   </div>
 );

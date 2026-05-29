@@ -17,7 +17,7 @@ export function updateBadge(tabId: number, semitone?: number, loopMode?: string)
       parts.push(currentSemitone.toString());
     const text = parts.join(' ').trim();
     chrome.action.setBadgeText({ tabId, text });
-    chrome.action.setBadgeBackgroundColor({ tabId, color: '#4b60d8ff' });
+    chrome.action.setBadgeBackgroundColor({ tabId, color: '#6e40c9' });
   });
 }
 
