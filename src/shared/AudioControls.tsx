@@ -1,151 +1,9 @@
-// ============================================================
-// Shared AudioControls, MaterialSlider, MaterialToggle
-// Используется в sidepanel/App.tsx и popup/App.tsx
-// ============================================================
-
-import React, { useRef } from 'react';
+import React from 'react';
 import type { MediaState, EqBand } from './types';
 import { DEFAULT_EQ_BANDS } from './types';
-
-// ============================================================
-// i18n helper (duplicated from App.tsx to avoid circular deps)
-// ============================================================
-const t = (key: string, ...args: string[]): string => {
-  const msg = chrome.i18n.getMessage(key, args);
-  return msg || key;
-};
-
-// ============================================================
-// Slider
-// ============================================================
-
-interface SliderProps {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  unit?: string;
-  displayValue?: string;
-  disabled?: boolean;
-  noCard?: boolean;
-  onChange: (value: number) => void;
-  onReset?: () => void;
-}
-
-const MaterialSlider: React.FC<SliderProps> = ({
-  label,
-  value,
-  min,
-  max,
-  step,
-  unit = '',
-  displayValue,
-  disabled = false,
-  noCard = false,
-  onChange,
-  onReset,
-}) => {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const percentage = ((value - min) / (max - min)) * 100;
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange(Number(e.target.value));
-  };
-
-  const fmtValue = displayValue ?? (value > 0 ? `+${value}` : `${value}`);
-
-  const slider = (
-    <div className="card-content">
-      <div className="mdc-slider" ref={trackRef}>
-        <div className="mdc-slider__track">
-          <div className="mdc-slider__track--inactive" />
-          <div className="mdc-slider__track--active" style={{ width: `${percentage}%` }} />
-        </div>
-        <input
-          type="range"
-          className="mdc-slider__input"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          disabled={disabled}
-          onChange={handleChange}
-          aria-label={label}
-        />
-        <div className="mdc-slider__thumb" style={{ left: `${percentage}%` }}>
-          <div className="mdc-slider__thumb-knob" />
-        </div>
-      </div>
-    </div>
-  );
-
-  if (noCard) {
-    return slider;
-  }
-
-  return (
-    <div className={`app-collapsible-card ${disabled ? 'disabled' : ''}`}>
-      <div className="card-header">
-        <span className="card-title">{label}</span>
-        <span className="display-value">
-          {fmtValue}
-          {unit}
-        </span>
-        <div className="right-buttons">
-          {onReset && value !== 0 && (
-            <button
-              className="icon-button icon-button-xs show-on-hover"
-              onClick={onReset}
-              title={t('common.reset') || 'Reset'}>
-              <span className="material-icons">undo</span>
-            </button>
-          )}
-        </div>
-      </div>
-      {slider}
-    </div>
-  );
-};
-
-// ============================================================
-// Toggle Switch
-// ============================================================
-
-interface ToggleProps {
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-}
-
-const MaterialToggle: React.FC<ToggleProps> = ({ label, checked, onChange, disabled = false }) => {
-  return (
-    <div className={`toggle-row ${disabled ? 'disabled' : ''}`}>
-      <span className="toggle-label">{label}</span>
-      <label className="mdc-switch">
-        <input
-          type="checkbox"
-          className="mdc-switch__native-control"
-          checked={checked}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.checked)}
-        />
-        <div className="mdc-switch__track">
-          <div className="mdc-switch__handle-track">
-            <div className="mdc-switch__handle">
-              <div className="mdc-switch__shadow" />
-              <div className="mdc-switch__ripple" />
-            </div>
-          </div>
-        </div>
-      </label>
-    </div>
-  );
-};
-
-// ============================================================
-// AudioControls Props
+import { translate } from './i18n';
+import { MaterialSlider } from './components/MaterialSlider';
+import { MaterialToggle } from './components/MaterialToggle';
 // ============================================================
 
 export interface AudioControlsProps {
@@ -175,7 +33,7 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
     return (
       <div className="loading-container">
         <div className="loading-spinner" />
-        <div className="loading-text">{t('common.connecting') || 'Connecting...'}</div>
+        <div className="loading-text">{translate('common.connecting') || 'Connecting...'}</div>
       </div>
     );
   }
@@ -184,7 +42,7 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
     return (
       <div className="no-permission">
         <span className="material-icons">block</span>
-        <p>{t('common.noPermission') || 'No permission for this page'}</p>
+        <p>{translate('common.noPermission') || 'No permission for this page'}</p>
       </div>
     );
   }
@@ -194,7 +52,7 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
       {/* Pitch Section */}
       <div className="app-card">
         <div className="mat-mdc-card-header">
-          <span className="mat-mdc-card-title">{t('pitch.title') || 'Pitch'}</span>
+          <span className="mat-mdc-card-title">{translate('pitch.title') || 'Pitch'}</span>
           <span className="value">
             {media.semitone > 0 ? '+' : ''}
             {media.semitone}
@@ -202,7 +60,7 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
         </div>
         <div className="mat-mdc-card-content">
           <MaterialSlider
-            label={t('pitch.semitones') || 'Semitones'}
+            label={translate('pitch.semitones') || 'Semitones'}
             value={media.semitone}
             min={-12}
             max={12}
@@ -217,12 +75,12 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
       {/* Speed Section */}
       <div className="app-card">
         <div className="mat-mdc-card-header">
-          <span className="mat-mdc-card-title">{t('speed.title') || 'Speed'}</span>
+          <span className="mat-mdc-card-title">{translate('speed.title') || 'Speed'}</span>
           <span className="value">{media.speed.toFixed(2)}x</span>
         </div>
         <div className="mat-mdc-card-content">
           <MaterialSlider
-            label={t('speed.speed') || 'Speed'}
+            label={translate('speed.speed') || 'Speed'}
             value={media.speed}
             min={0.25}
             max={4}
@@ -238,11 +96,11 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
       {/* EQ Section */}
       <div className="app-card">
         <div className="mat-mdc-card-header">
-          <span className="mat-mdc-card-title">{t('eq.title') || 'Equalizer'}</span>
+          <span className="mat-mdc-card-title">{translate('eq.title') || 'Equalizer'}</span>
         </div>
         <div className="mat-mdc-card-content">
           <MaterialToggle
-            label={t('eq.enable') || 'Enable EQ'}
+            label={translate('eq.enable') || 'Enable EQ'}
             checked={(media as any).eqEnabled}
             onChange={onEqToggle}
           />

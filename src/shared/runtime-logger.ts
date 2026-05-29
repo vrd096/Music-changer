@@ -1,14 +1,10 @@
-// ============================================================
-// Runtime logger - logs errors/warnings to chrome.storage.local
-// ============================================================
-
 import type { LogEntry } from './types';
 import {
   RUNTIME_LOG_KEY,
   RUNTIME_LOG_MAX,
   RUNTIME_LOG_STRING_MAX,
   RUNTIME_LOG_DEPTH_MAX,
-} from './types';
+} from './helpers';
 
 /** Safely serialize a value for logging */
 function safeSerialize(value: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
@@ -36,7 +32,7 @@ function safeSerialize(value: unknown, depth = 0, seen = new WeakSet<object>()):
   seen.add(obj);
 
   if (Array.isArray(value)) {
-    return value.map((v) => safeSerialize(v, depth + 1, seen));
+    return value.map((item) => safeSerialize(item, depth + 1, seen));
   }
 
   const result: Record<string, unknown> = {};
@@ -67,7 +63,7 @@ function parseLogEntry(level: 'warn' | 'error', args: unknown[]): Omit<LogEntry,
     event: level,
     msg:
       args
-        .filter((a) => typeof a === 'string')
+        .filter((arg) => typeof arg === 'string')
         .join(' ')
         .trim() || undefined,
     ctx: args,
@@ -103,9 +99,7 @@ export const runtimeLog = {
 
       const updated = [...entries, newEntry].slice(-RUNTIME_LOG_MAX);
       await chrome.storage.local.set({ [RUNTIME_LOG_KEY]: updated });
-    } catch {
-      // Silently fail - logging should never throw
-    }
+    } catch {}
   },
 
   log(..._args: unknown[]): Promise<void> {
@@ -133,8 +127,6 @@ export const runtimeLog = {
     try {
       if (!chrome?.storage?.local) return;
       await chrome.storage.local.remove(RUNTIME_LOG_KEY);
-    } catch {
-      // Silently fail
-    }
+    } catch {}
   },
 };

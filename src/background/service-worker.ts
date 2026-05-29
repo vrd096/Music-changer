@@ -1,18 +1,8 @@
-// ============================================================
-// Service Worker (Background Script) - Manifest V3
-// ============================================================
-
 import { runtimeLog } from '../shared/runtime-logger';
-import {
-  isBlockedUrl,
-  isVivExt,
-  isYaBrowser,
-  hasSidePanel,
-  type ServiceWorkerMessage,
-  type ContentMessage,
-} from '../shared/types';
-
-// --- UI Mode Detection ---
+import { isBlockedUrl, isVivExt, isYaBrowser, hasSidePanel } from '../shared/helpers';
+import type { ServiceWorkerMessage, ContentMessage } from '../shared/types';
+import { hasHostPermissions, registerContentScripts } from './content-scripts';
+import { updateBadge, highlightToolbarIcon } from './badge';
 
 let uiMode: 'popup' | 'sidepanel' = 'popup';
 let sidePanelEnabled = false;
@@ -20,7 +10,6 @@ let sidePanelOnceTabId: number | null = null;
 const sidePanelTabs = new Set<number>();
 const connectedTabs = new Set<number>();
 const connectThrottle = new Map<number, number>();
-const highlightTimers = new Map<number, ReturnType<typeof setTimeout>[]>();
 
 async function detectUiMode(): Promise<void> {
   try {
@@ -56,8 +45,6 @@ async function detectUiMode(): Promise<void> {
 
 const initPromise = detectUiMode();
 
-// --- Side Panel Management ---
-
 async function ensureSidePanelForTab(tabId: number, setEnabled = false): Promise<void> {
   try {
     if (!sidePanelEnabled) return;
@@ -87,8 +74,6 @@ function isSidePanelMode(): boolean {
   return sidePanelEnabled && uiMode === 'sidepanel';
 }
 
-// --- Tab UI Update ---
-
 async function updateUiForTab(tab: chrome.tabs.Tab | undefined): Promise<void> {
   if (!tab?.id) return;
   try {
@@ -112,81 +97,6 @@ async function updateUiForTab(tab: chrome.tabs.Tab | undefined): Promise<void> {
   }
 }
 
-// --- Content Script Registration ---
-
-// Проверяет, есть ли у расширения host_permissions (были ли они предоставлены)
-function hasHostPermissions(): Promise<boolean> {
-  return new Promise((resolve) => {
-    chrome.permissions.contains({ origins: ['*://*/*'] }, (result) => resolve(result));
-  });
-}
-
-async function registerContentScripts(): Promise<void> {
-  const perms = (await chrome.permissions.getAll()).origins || [];
-  const allUrls = perms.includes('<all_urls>') ? ['*://*/*'] : perms;
-  // Принимаем любые http/https паттерны, не только *://
-  // После предоставления прав на конкретный сайт (например, https://www.youtube.com/*)
-  // паттерн не начинается с *://, но должен быть использован для регистрации скриптов
-  const matches = allUrls
-    .filter((u) => u.startsWith('*://') || u.startsWith('http://') || u.startsWith('https://'))
-    .sort();
-
-  if (matches.length === 0) {
-    console.log('[SW] No matching URL patterns found for content scripts, permissions:', perms);
-    return;
-  }
-
-  const dispatcherId = 'tp_content_dispatcher';
-  const contentId = 'tp_content';
-  const scripts = [
-    {
-      id: dispatcherId,
-      matches,
-      js: ['content-dispatcher.js'],
-      runAt: 'document_start' as const,
-      world: 'ISOLATED' as const,
-      allFrames: true,
-      persistAcrossSessions: true,
-    },
-    {
-      id: contentId,
-      matches,
-      js: ['content.js'],
-      runAt: 'document_start' as const,
-      world: 'MAIN' as const,
-      allFrames: true,
-      persistAcrossSessions: true,
-      matchOriginAsFallback: true,
-    },
-  ];
-
-  const scriptIds = new Set([dispatcherId, contentId]);
-  const registered = await chrome.scripting.getRegisteredContentScripts();
-  const registeredIds = new Set(registered.map((s) => s.id));
-  const hasUpdate = !!chrome.scripting.updateContentScripts;
-
-  for (const script of scripts) {
-    if (registeredIds.has(script.id)) {
-      if (hasUpdate) {
-        await chrome.scripting.updateContentScripts([script as any]);
-      } else {
-        await chrome.scripting.unregisterContentScripts({ ids: [script.id] });
-        await chrome.scripting.registerContentScripts([script as any]);
-      }
-    } else {
-      await chrome.scripting.registerContentScripts([script as any]);
-    }
-  }
-
-  // Unregister scripts that are no longer needed
-  const toRemove = registered.filter((s) => !scriptIds.has(s.id)).map((s) => s.id);
-  if (toRemove.length > 0) {
-    await chrome.scripting.unregisterContentScripts({ ids: toRemove });
-  }
-}
-
-// --- Messaging ---
-
 async function sendRuntimeMessage(msg: ServiceWorkerMessage, context: string): Promise<boolean> {
   try {
     await chrome.runtime.sendMessage(msg);
@@ -197,7 +107,6 @@ async function sendRuntimeMessage(msg: ServiceWorkerMessage, context: string): P
       msgStr.includes('Receiving end does not exist') ||
       msgStr.includes('The message port closed before a response was received')
     ) {
-      // Expected when no popup/sidepanel is open
       return false;
     }
     runtimeLog.error('[SW] Error sending runtime message', { context, error: err });
@@ -226,85 +135,12 @@ async function sendWithRetry(
   }
 }
 
-// --- Badge Management ---
-
-function updateBadge(tabId: number, semitone?: number, loopMode?: string): void {
-  chrome.action.getBadgeText({ tabId }, (currentText) => {
-    let hasLoop = currentText.includes('▶');
-    let currentSemitone: number | undefined;
-
-    const withoutLoop = currentText.replace('▶', '').trim();
-    if (withoutLoop) {
-      const parsed = parseFloat(withoutLoop);
-      if (!isNaN(parsed)) currentSemitone = parsed;
-    }
-
-    if (loopMode !== undefined) hasLoop = loopMode !== 'off';
-    if (semitone !== undefined) currentSemitone = semitone;
-
-    const parts: string[] = [];
-    if (hasLoop) parts.push('▶');
-    if (currentSemitone !== undefined && currentSemitone !== 0)
-      parts.push(currentSemitone.toString());
-
-    const text = parts.join(' ').trim();
-    chrome.action.setBadgeText({ tabId, text });
-    chrome.action.setBadgeBackgroundColor({ tabId, color: '#4b60d8ff' });
-  });
-}
-
-// --- Icon Highlight Animation ---
-
-function highlightToolbarIcon(tabId: number): void {
-  const existing = highlightTimers.get(tabId);
-  if (existing) existing.forEach(clearTimeout);
-
-  const timers: ReturnType<typeof setTimeout>[] = [];
-  highlightTimers.set(tabId, timers);
-
-  const normal = { 16: 'assets/icons/icon-16-32x32.png', 32: 'assets/icons/icon-32x32.png' };
-  const highlight = {
-    16: 'assets/icons/icon-16-32x32-highlight.png',
-    32: 'assets/icons/icon-16-32x32-highlight.png',
-  };
-
-  let delay = 0;
-  for (let i = 0; i < 3; i++) {
-    timers.push(
-      setTimeout(() => {
-        chrome.action.setIcon({ tabId, path: highlight }, () => {
-          chrome.runtime.lastError;
-        });
-      }, delay),
-    );
-    delay += 320;
-    timers.push(
-      setTimeout(() => {
-        chrome.action.setIcon({ tabId, path: normal }, () => {
-          chrome.runtime.lastError;
-        });
-      }, delay),
-    );
-    delay += 250;
-  }
-
-  timers.push(
-    setTimeout(() => {
-      highlightTimers.delete(tabId);
-    }, delay),
-  );
-}
-
-// --- Message Processing ---
-// Обрабатывает сообщения ТОЛЬКО от content script (у них есть tabId)
-
 function processMessage(
   msg: ServiceWorkerMessage | ContentMessage,
   tabId: number,
   senderUrl?: string,
 ): void {
   try {
-    // Handle content script messages
     const contentMsg = msg as ContentMessage;
 
     if (contentMsg.type === 'main-console-error') {
@@ -331,23 +167,23 @@ function processMessage(
     }
 
     if (contentMsg.type === 'highlight-toolbar-icon') {
-      const tId = Number(contentMsg.tabId);
-      if (Number.isFinite(tId) && tId > 0) highlightToolbarIcon(tId);
+      const targetTabId = Number(contentMsg.tabId);
+      if (Number.isFinite(targetTabId) && targetTabId > 0) highlightToolbarIcon(targetTabId);
       return;
     }
 
     if (contentMsg.type === 'enable-tab-connect') {
-      const tId = Number(contentMsg.tabId ?? tabId);
-      if (!Number.isFinite(tId) || tId <= 0) return;
-      connectedTabs.add(tId);
-      if (isSidePanelMode()) ensureSidePanelForTab(tId, true);
+      const targetTabId = Number(contentMsg.tabId ?? tabId);
+      if (!Number.isFinite(targetTabId) || targetTabId <= 0) return;
+      connectedTabs.add(targetTabId);
+      if (isSidePanelMode()) ensureSidePanelForTab(targetTabId, true);
 
       const url = typeof contentMsg.url === 'string' ? contentMsg.url : senderUrl;
       sendWithRetry(
         {
           sender: 'service-worker',
           command: 'connect',
-          tabId: tId,
+          tabId: targetTabId,
           isNavigation: true,
           altUrl: url,
           altTitle: typeof contentMsg.title === 'string' ? contentMsg.title : undefined,
@@ -358,7 +194,6 @@ function processMessage(
       return;
     }
 
-    // Handle dispatcher-ready (from content-dispatcher via chrome.runtime.sendMessage)
     const anyMsg = msg as any;
     if (anyMsg.command === 'dispatcher-ready' && tabId) {
       if (!isThrottled(String(tabId))) {
@@ -372,7 +207,6 @@ function processMessage(
       return;
     }
 
-    // Обновляем badge при получении set/set-from-content от content script
     if (anyMsg.command === 'set' || anyMsg.command === 'set-from-content') {
       const semitone = anyMsg.semitone ?? anyMsg.media?.semitone;
       const loopMode = anyMsg.loopMode;
@@ -386,14 +220,10 @@ function processMessage(
   }
 }
 
-// --- Event Listeners ---
-
-// Startup
 chrome.runtime.onStartup.addListener(async () => {
   await detectUiMode();
 });
 
-// Installation
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === 'install' || reason === 'update') {
     try {
@@ -405,7 +235,6 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   }
 });
 
-// Permissions
 chrome.permissions.onAdded.addListener(async (perms) => {
   await registerContentScripts().catch((err) => {
     runtimeLog.error('[SW] registerContentScripts on permissions.onAdded failed', err);
@@ -460,7 +289,6 @@ chrome.permissions.onRemoved.addListener(() => {
   });
 });
 
-// Storage changes
 chrome.storage.onChanged.addListener(async (changes, area) => {
   if (area === 'sync' && changes.uiMode) {
     if (changes.uiMode.newValue === undefined) return;
@@ -471,12 +299,11 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
   }
 
   if (area === 'local' && changes.sidepanelOnceTabId !== undefined) {
-    const val = changes.sidepanelOnceTabId?.newValue;
-    sidePanelOnceTabId = typeof val === 'number' ? val : null;
+    const value = changes.sidepanelOnceTabId?.newValue;
+    sidePanelOnceTabId = typeof value === 'number' ? value : null;
   }
 });
 
-// Action click
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) {
     runtimeLog.error('[SW] Could not retrieve active tab information on action click');
@@ -529,7 +356,6 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 });
 
-// Tab activation
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   try {
     await initPromise;
@@ -559,12 +385,10 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   }
 });
 
-// Tab removal
 chrome.tabs.onRemoved.addListener((tabId) => {
   sidePanelTabs.delete(tabId);
   connectedTabs.delete(tabId);
   connectThrottle.delete(tabId as any);
-  highlightTimers.delete(tabId);
 
   if (sidePanelOnceTabId === tabId) {
     sidePanelOnceTabId = null;
@@ -572,7 +396,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
-// Tab update
 const tabUrls = new Map<number, string>();
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -614,20 +437,16 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 });
 
-// Runtime messages
 chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
   try {
     const tabId = msg.tabId ?? sender.tab?.id;
 
-    // Если есть tabId — обрабатываем как сообщение от content script
     if (tabId) {
       processMessage(msg, tabId, sender.tab?.url);
       sendResponse(true);
       return;
     }
 
-    // Сообщения без tabId — от popup или sidepanel.
-    // Отправляем connect обратно, чтобы попап знал статус соединения
     (async () => {
       try {
         const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -641,7 +460,6 @@ chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
           };
           await chrome.runtime.sendMessage(connectMsg).catch(() => {});
         } else {
-          // Нет активной вкладки
           const noTabMsg: ServiceWorkerMessage = {
             sender: 'service-worker',
             command: 'connect',
@@ -657,12 +475,9 @@ chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
     })();
 
     sendResponse(true);
-  } catch {
-    // Ignore
-  }
+  } catch {}
 });
 
-// External messages (from transpose.video)
 chrome.runtime.onMessageExternal.addListener((msg: any, _sender, sendResponse) => {
   if (msg.type === 'ping') {
     sendResponse({ status: 'success', message: 'pong' });
@@ -671,7 +486,7 @@ chrome.runtime.onMessageExternal.addListener((msg: any, _sender, sendResponse) =
 
   if (msg.type === 'store-share-payload') {
     (async () => {
-      const { createSharePayload } = await import('../shared/types');
+      const { createSharePayload } = await import('../shared/helpers');
       const payload = createSharePayload(msg.share);
       if (payload) {
         await chrome.storage.local.set({ pendingShare: payload });
