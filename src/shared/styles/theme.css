@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+/* ===== Music Pitch Changer — Design Tokens ===== */
+
+@theme {
+  --font-sans: "SF Pro Display", system-ui, -apple-system, sans-serif;
+}
+
+:root {
+  /* Light theme (default) */
+  --bg-primary: #ffffff;
+  --bg-card: #f5f5f7;
+  --border: #e8e8ed;
+  --text-primary: #1d1d1f;
+  --text-secondary: #86868b;
+  --text-muted: #aeaeb2;
+  --accent-primary: #6e40c9;
+  --accent-secondary: #0071e3;
+  --accent-gradient: linear-gradient(90deg, #6e40c9, #0071e3);
+  --toggle-bg: #d2d2d7;
+  --toggle-knob: #ffffff;
+  --toggle-active-bg: #0071e3;
+}
+
+html.dark {
+  --bg-primary: #0d1117;
+  --bg-card: #161b22;
+  --border: #21262d;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #484f58;
+  --accent-primary: #6e40c9;
+  --accent-secondary: #58a6ff;
+  --accent-gradient: linear-gradient(90deg, #6e40c9, #58a6ff);
+  --toggle-bg: #30363d;
+  --toggle-knob: #ffffff;
+  --toggle-active-bg: #58a6ff;
+}
+
+/* ===== Base ===== */
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===== Spinner ===== */
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ===== Fade + scale animation ===== */
+
+@keyframes fade-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-scale {
+  animation: fade-scale-in 0.2s ease-out;
+}

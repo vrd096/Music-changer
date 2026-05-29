@@ -1,0 +1,232 @@
+<h2>SidePanel — расширенный режим</h2>
+<p class="subtitle">Тёмная тема по умолчанию. Шире чем Popup. Дополнительные кнопки в тулбаре. Та же дизайн-система.</p>
+
+<!-- DARK SIDEPANEL -->
+<div class="mockup" style="margin-bottom:20px">
+  <div class="mockup-header">🌙 SidePanel — Тёмная тема</div>
+  <div class="mockup-body" style="background:#0d1117;color:#e6edf3;font-family:'SF Pro Display',system-ui,sans-serif;padding:0;border-radius:10px;overflow:hidden;min-width:340px">
+    <!-- Header / Toolbar -->
+    <div style="background:#161b22;padding:8px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #21262d;gap:4px">
+      <!-- Left group -->
+      <div style="display:flex;align-items:center;gap:2px">
+        <!-- Logo -->
+        <svg width="18" height="14" viewBox="0 0 18 14" style="flex-shrink:0;margin-right:4px">
+          <rect x="0" y="6" width="1.5" height="2" rx="0.5" fill="#58a6ff"/>
+          <rect x="2.5" y="3" width="1.5" height="8" rx="0.5" fill="#6e40c9"/>
+          <rect x="5" y="1" width="1.5" height="12" rx="0.5" fill="#58a6ff"/>
+          <rect x="7.5" y="0" width="1.5" height="14" rx="0.5" fill="#6e40c9"/>
+          <rect x="10" y="2" width="1.5" height="10" rx="0.5" fill="#58a6ff"/>
+          <rect x="12.5" y="4" width="1.5" height="6" rx="0.5" fill="#6e40c9"/>
+          <rect x="15" y="5" width="1.5" height="4" rx="0.5" fill="#58a6ff"/>
+        </svg>
+        <!-- Scene -->
+        <button style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:#8b949e;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">☀️</button>
+        <!-- History -->
+        <button style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:#8b949e;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">📋</button>
+      </div>
+
+      <!-- Center: title -->
+      <span style="font-weight:600;font-size:11px;letter-spacing:0.3px;text-transform:uppercase;color:#8b949e;text-align:center;flex:1">MUSIC PITCH CHANGER</span>
+
+      <!-- Right group -->
+      <div style="display:flex;align-items:center;gap:2px">
+        <!-- Save -->
+        <button style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:#8b949e;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">💾</button>
+        <!-- Share (disabled unless PRO) -->
+        <button style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:#484f58;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0.5">↗</button>
+        <!-- Power -->
+        <button style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:#58a6ff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">⏻</button>
+        <!-- Settings -->
+        <button style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:#8b949e;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">⚙</button>
+        <!-- Theme -->
+        <span style="font-size:12px;margin-left:4px">🌙</span>
+        <div style="width:22px;height:12px;background:#30363d;border-radius:6px;position:relative;cursor:pointer;margin-left:2px">
+          <div style="position:absolute;top:2px;right:2px;width:8px;height:8px;background:#58a6ff;border-radius:50%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Content (same structure, wider) -->
+    <div style="padding:12px 14px 14px">
+
+      <!-- ТОНАЛЬНОСТЬ -->
+      <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;padding:12px 14px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:11px;color:#8b949e;font-weight:500;text-transform:uppercase;letter-spacing:0.8px">Тональность</span>
+          <span style="font-size:15px;font-weight:700;color:#e6edf3;letter-spacing:-0.2px">+2 <span style="font-size:10px;color:#8b949e;font-weight:400">st</span></span>
+        </div>
+        <div style="background:#21262d;height:5px;border-radius:2px;position:relative;margin-bottom:4px">
+          <div style="background:linear-gradient(90deg,#6e40c9,#58a6ff);height:100%;width:58%;border-radius:2px"></div>
+          <div style="position:absolute;top:-4px;left:58%;width:14px;height:14px;background:#58a6ff;border-radius:50%;border:2px solid #0d1117;box-shadow:0 0 10px rgba(88,166,255,0.5);transform:translateX(-50%)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:#484f58"><span>−12</span><span>0</span><span>+12</span></div>
+      </div>
+
+      <!-- СКОРОСТЬ BPM -->
+      <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;padding:12px 14px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:11px;color:#8b949e;font-weight:500;text-transform:uppercase;letter-spacing:0.8px">Скорость</span>
+          <span style="font-size:15px;font-weight:700;color:#e6edf3;letter-spacing:-0.2px">128 <span style="font-size:10px;color:#58a6ff;font-weight:500">BPM</span></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <button style="width:28px;height:28px;min-width:28px;border-radius:50%;border:1px solid #30363d;background:#161b22;color:#e6edf3;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;flex-shrink:0">−</button>
+          <div style="flex:1;background:#21262d;height:5px;border-radius:2px;position:relative">
+            <div style="background:linear-gradient(90deg,#6e40c9,#58a6ff);height:100%;width:50%;border-radius:2px"></div>
+            <div style="position:absolute;top:-4px;left:50%;width:14px;height:14px;background:#58a6ff;border-radius:50%;border:2px solid #0d1117;box-shadow:0 0 10px rgba(88,166,255,0.5);transform:translateX(-50%)"></div>
+          </div>
+          <button style="width:28px;height:28px;min-width:28px;border-radius:50%;border:1px solid #30363d;background:#161b22;color:#e6edf3;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;flex-shrink:0">+</button>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:#484f58;padding:0 2px"><span>98</span><span>BPM</span><span>158</span></div>
+      </div>
+
+      <!-- EQ -->
+      <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;padding:12px 14px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:11px;color:#8b949e;font-weight:500;text-transform:uppercase;letter-spacing:0.8px">Эквалайзер</span>
+          <div style="width:32px;height:16px;background:#21262d;border-radius:8px;position:relative;cursor:pointer">
+            <div style="position:absolute;top:2px;right:2px;width:12px;height:12px;background:#58a6ff;border-radius:50%"></div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px;padding:0 4px">
+          <span style="font-size:8px;color:#484f58">30</span><span style="font-size:8px;color:#484f58">120</span><span style="font-size:8px;color:#484f58">350</span><span style="font-size:8px;color:#484f58">1.2k</span><span style="font-size:8px;color:#484f58">3.5k</span><span style="font-size:8px;color:#484f58">9k</span>
+        </div>
+        <div style="display:flex;gap:4px;height:60px;align-items:flex-end">
+          <div style="flex:1;background:linear-gradient(to top,rgba(110,64,201,0.6),rgba(88,166,255,0.6));height:40%;border-radius:3px 3px 0 0;position:relative"><div style="position:absolute;top:-3px;left:50%;width:8px;height:8px;background:#58a6ff;border-radius:50%;transform:translateX(-50%)"></div></div>
+          <div style="flex:1;background:linear-gradient(to top,rgba(110,64,201,0.6),rgba(88,166,255,0.6));height:65%;border-radius:3px 3px 0 0;position:relative"><div style="position:absolute;top:-3px;left:50%;width:8px;height:8px;background:#58a6ff;border-radius:50%;transform:translateX(-50%)"></div></div>
+          <div style="flex:1;background:linear-gradient(to top,rgba(110,64,201,0.6),rgba(88,166,255,0.6));height:85%;border-radius:3px 3px 0 0;position:relative"><div style="position:absolute;top:-3px;left:50%;width:8px;height:8px;background:#58a6ff;border-radius:50%;transform:translateX(-50%)"></div></div>
+          <div style="flex:1;background:linear-gradient(to top,rgba(110,64,201,0.6),rgba(88,166,255,0.6));height:55%;border-radius:3px 3px 0 0;position:relative"><div style="position:absolute;top:-3px;left:50%;width:8px;height:8px;background:#58a6ff;border-radius:50%;transform:translateX(-50%)"></div></div>
+          <div style="flex:1;background:linear-gradient(to top,rgba(110,64,201,0.6),rgba(88,166,255,0.6));height:45%;border-radius:3px 3px 0 0;position:relative"><div style="position:absolute;top:-3px;left:50%;width:8px;height:8px;background:#58a6ff;border-radius:50%;transform:translateX(-50%)"></div></div>
+          <div style="flex:1;background:linear-gradient(to top,rgba(110,64,201,0.6),rgba(88,166,255,0.6));height:25%;border-radius:3px 3px 0 0;position:relative"><div style="position:absolute;top:-3px;left:50%;width:8px;height:8px;background:#58a6ff;border-radius:50%;transform:translateX(-50%)"></div></div>
+        </div>
+      </div>
+
+      <!-- BPM + KEY -->
+      <div style="display:flex;gap:10px">
+        <div style="flex:1;background:#161b22;border:1px solid #21262d;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:9px;color:#484f58;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">BPM</div>
+          <div style="width:24px;height:24px;margin:0 auto;border:2px solid #21262d;border-top:2px solid #58a6ff;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+          <div style="font-size:7px;color:#484f58;margin-top:5px">analyzing</div>
+        </div>
+        <div style="flex:1;background:#161b22;border:1px solid #21262d;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:9px;color:#484f58;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">KEY</div>
+          <div style="width:24px;height:24px;margin:0 auto;border:2px solid #21262d;border-top:2px solid #58a6ff;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+          <div style="font-size:7px;color:#484f58;margin-top:5px">analyzing</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LIGHT SIDEPANEL -->
+<div class="mockup" style="margin-bottom:20px">
+  <div class="mockup-header">☀️ SidePanel — Светлая тема</div>
+  <div class="mockup-body" style="background:#ffffff;color:#1d1d1f;font-family:'SF Pro Display',system-ui,sans-serif;padding:0;border-radius:10px;overflow:hidden;min-width:340px;border:1px solid #e8e8ed">
+    <!-- Header / Toolbar -->
+    <div style="background:#f5f5f7;padding:8px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e8e8ed;gap:4px">
+      <div style="display:flex;align-items:center;gap:2px">
+        <svg width="18" height="14" viewBox="0 0 18 14" style="flex-shrink:0;margin-right:4px">
+          <rect x="0" y="6" width="1.5" height="2" rx="0.5" fill="#0071e3"/>
+          <rect x="2.5" y="3" width="1.5" height="8" rx="0.5" fill="#6e40c9"/>
+          <rect x="5" y="1" width="1.5" height="12" rx="0.5" fill="#0071e3"/>
+          <rect x="7.5" y="0" width="1.5" height="14" rx="0.5" fill="#6e40c9"/>
+          <rect x="10" y="2" width="1.5" height="10" rx="0.5" fill="#0071e3"/>
+          <rect x="12.5" y="4" width="1.5" height="6" rx="0.5" fill="#6e40c9"/>
+          <rect x="15" y="5" width="1.5" height="4" rx="0.5" fill="#0071e3"/>
+        </svg>
+        <button style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:#86868b;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">☀️</button>
+        <button style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:#86868b;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">📋</button>
+      </div>
+      <span style="font-weight:600;font-size:11px;letter-spacing:0.3px;text-transform:uppercase;color:#86868b;text-align:center;flex:1">MUSIC PITCH CHANGER</span>
+      <div style="display:flex;align-items:center;gap:2px">
+        <button style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:#86868b;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">💾</button>
+        <button style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:#d2d2d7;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0.5">↗</button>
+        <button style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:#0071e3;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">⏻</button>
+        <button style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:#86868b;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">⚙</button>
+        <span style="font-size:12px;margin-left:4px">☀️</span>
+        <div style="width:22px;height:12px;background:#d2d2d7;border-radius:6px;position:relative;cursor:pointer;margin-left:2px">
+          <div style="position:absolute;top:2px;left:2px;width:8px;height:8px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.2)"></div>
+        </div>
+      </div>
+    </div>
+    <div style="padding:12px 14px 14px">
+      <!-- Same cards -->
+      <div style="background:#f5f5f7;border-radius:10px;padding:12px 14px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:11px;color:#86868b;font-weight:500;text-transform:uppercase;letter-spacing:0.8px">Тональность</span>
+          <span style="font-size:15px;font-weight:700;color:#1d1d1f">+2 <span style="font-size:10px;color:#86868b;font-weight:400">st</span></span>
+        </div>
+        <div style="background:#e8e8ed;height:5px;border-radius:4px;position:relative;margin-bottom:4px">
+          <div style="background:linear-gradient(90deg,#6e40c9,#0071e3);height:100%;width:58%;border-radius:4px"></div>
+          <div style="position:absolute;top:-5px;left:58%;width:14px;height:14px;background:#fff;border-radius:50%;border:2px solid #0071e3;box-shadow:0 1px 4px rgba(0,0,0,0.15);transform:translateX(-50%)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:#aeaeb2"><span>−12</span><span>0</span><span>+12</span></div>
+      </div>
+      <div style="background:#f5f5f7;border-radius:10px;padding:12px 14px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:11px;color:#86868b;font-weight:500;text-transform:uppercase;letter-spacing:0.8px">Скорость</span>
+          <span style="font-size:15px;font-weight:700;color:#1d1d1f">128 <span style="font-size:10px;color:#0071e3;font-weight:500">BPM</span></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <button style="width:28px;height:28px;min-width:28px;border-radius:50%;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;flex-shrink:0;box-shadow:0 1px 2px rgba(0,0,0,0.08)">−</button>
+          <div style="flex:1;background:#e8e8ed;height:5px;border-radius:4px;position:relative">
+            <div style="background:linear-gradient(90deg,#6e40c9,#0071e3);height:100%;width:50%;border-radius:4px"></div>
+            <div style="position:absolute;top:-5px;left:50%;width:14px;height:14px;background:#fff;border-radius:50%;border:2px solid #0071e3;box-shadow:0 1px 4px rgba(0,0,0,0.15);transform:translateX(-50%)"></div>
+          </div>
+          <button style="width:28px;height:28px;min-width:28px;border-radius:50%;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;flex-shrink:0;box-shadow:0 1px 2px rgba(0,0,0,0.08)">+</button>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:#aeaeb2;padding:0 2px"><span>98</span><span>BPM</span><span>158</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:12px">
+  <h3>🛠️ SidePanel Toolbar — состав кнопок</h3>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
+    <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;padding:8px 10px;font-size:11px;color:#e6edf3">
+      <span style="color:#58a6ff">☀️</span> Смена сцены (цикл 4 темы)
+    </div>
+    <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;padding:8px 10px;font-size:11px;color:#e6edf3">
+      <span style="color:#8b949e">📋</span> История / плейлисты
+    </div>
+    <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;padding:8px 10px;font-size:11px;color:#e6edf3">
+      <span style="color:#8b949e">💾</span> Сохранить трек
+    </div>
+    <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;padding:8px 10px;font-size:11px;color:#484f58">
+      <span style="color:#484f58">↗</span> Share (PRO only)
+    </div>
+    <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;padding:8px 10px;font-size:11px;color:#e6edf3">
+      <span style="color:#58a6ff">⏻</span> Power on/off
+    </div>
+    <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;padding:8px 10px;font-size:11px;color:#e6edf3">
+      <span style="color:#8b949e">⚙</span> Настройки
+    </div>
+    <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;padding:8px 10px;font-size:11px;color:#e6edf3">
+      <span style="color:#8b949e">🌙/☀️</span> Переключатель темы
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:12px">
+  <h3>📐 Отличия SidePanel от Popup</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>Popup (компактный)</h4>
+      <ul>
+        <li>Ширина: ~300px</li>
+        <li>Тулбар: только логотип, история, настройки</li>
+        <li>3 страницы (main/history/settings)</li>
+        <li>Закрывается при клике вне окна</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>SidePanel (расширенный)</h4>
+      <ul>
+        <li>Ширина: ~340px+ (регулируется)</li>
+        <li>Тулбар: полный набор кнопок</li>
+        <li>Те же 3 страницы + PRO-баннер снизу</li>
+        <li>Закреплён сбоку, не закрывается сам</li>
+      </ul>
+    </div>
+  </div>
+</div>

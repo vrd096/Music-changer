@@ -1,101 +1,70 @@
 // ============================================================
-// SidePanel App - отправляет команды напрямую в content script
-// через chrome.tabs.sendMessage (как в оригинальном Transpose)
+// SidePanel App — Music Pitch Changer
 // ============================================================
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AudioControls } from '../shared/AudioControls';
 import type { MediaState, ServiceWorkerMessage, EqBand } from '../shared/types';
 import { DEFAULT_EQ_BANDS } from '../shared/types';
-import { translate } from '../shared/i18n';
+import { useTheme } from '../shared/hooks/useTheme';
 import { HistoryPage } from '../shared/components/HistoryPage';
-import { ProBadge } from '../shared/components/ProBanner';
+import { TonalityCard } from '../popup/components/TonalityCard';
+import { SpeedCard } from '../popup/components/SpeedCard';
+import { EqCard } from '../popup/components/EqCard';
+import { BpmKeyCard } from '../popup/components/BpmKeyCard';
 
-// ============================================================
-// SubscriptionAlert
-// ============================================================
+const Logo: React.FC = () => (
+  <svg width="16" height="12" viewBox="0 0 18 14" className="flex-shrink-0">
+    <rect x="0" y="6" width="1.5" height="2" rx="0.5" fill="var(--accent-secondary)" />
+    <rect x="2.5" y="3" width="1.5" height="8" rx="0.5" fill="var(--accent-primary)" />
+    <rect x="5" y="1" width="1.5" height="12" rx="0.5" fill="var(--accent-secondary)" />
+    <rect x="7.5" y="0" width="1.5" height="14" rx="0.5" fill="var(--accent-primary)" />
+    <rect x="10" y="2" width="1.5" height="10" rx="0.5" fill="var(--accent-secondary)" />
+    <rect x="12.5" y="4" width="1.5" height="6" rx="0.5" fill="var(--accent-primary)" />
+    <rect x="15" y="5" width="1.5" height="4" rx="0.5" fill="var(--accent-secondary)" />
+  </svg>
+);
 
-const SubscriptionAlert: React.FC = () => {
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    // Check subscription status
-    chrome.storage.sync.get('subscription', (result) => {
-      // Handle subscription alert logic
-    });
-  }, []);
-
-  if (!visible) return null;
-
-  return (
-    <div className="subscription-alert">
-      <span>Subscription required for this feature</span>
-      <button onClick={() => setVisible(false)}>Dismiss</button>
-    </div>
-  );
-};
-
-// ============================================================
-// ProBannerSidepanel
-// ============================================================
-
-const ProBannerSidepanel: React.FC = () => {
-  return (
-    <div className="pro-banner">
-      <div className="pro-banner-content">
-        <div className="pro-banner-text">
-          <h3>Transpose ▲▼ PRO</h3>
-          <p>Unlock all features</p>
-        </div>
-        <button className="pro-banner-button">Upgrade</button>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================
-// SidePanelApp - Главный компонент сайдпанели
-// ============================================================
-
-type SidePanelPage = 'main' | 'history' | 'settings';
+type Page = 'main' | 'history' | 'settings';
 
 export const SidePanelApp: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<SidePanelPage>('main');
+  const { theme, toggleTheme, isDark } = useTheme();
+  const [currentPage, setCurrentPage] = useState<Page>('main');
   const [connectionStatus, setConnectionStatus] = useState<
     'connecting' | 'connected' | 'disconnected' | 'no-permission'
   >('connecting');
   const [pendingHostUrl, setPendingHostUrl] = useState<string | null>(null);
-  const [media, setMedia] = useState<MediaState>({
-    semitone: 0,
-    pitch: 0,
-    speed: 1,
-    formant: 0,
-    loopMode: 'off',
-    varispeed: false,
-    eqEnabled: false,
-  } as any);
-  const [tabInfo, setTabInfo] = useState<{ url?: string; title?: string }>({});
   const [powerOn, setPowerOn] = useState(true);
-  const [hasPro, setHasPro] = useState(false);
-  const [isProTrial, setIsProTrial] = useState(false);
-  const [eqBands, setEqBands] = useState<EqBand[]>(DEFAULT_EQ_BANDS.map((b) => ({ ...b })));
-  const [toolbarProgressVisible, setToolbarProgressVisible] = useState(false);
-  const [sceneIndex, setSceneIndex] = useState(0);
 
-  const progressShowTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const progressHideTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const progressShowDelayMs = 180;
-  const progressHideGraceMs = 380;
+  const [semitone, setSemitone] = useState(0);
+  const [speed, setSpeed] = useState(1);
+  const [bpm, setBpm] = useState(128);
+  const [mediaType, setMediaType] = useState<'audio' | 'video'>('audio');
+  const [eqEnabled, setEqEnabled] = useState(false);
+  const [eqBands, setEqBands] = useState<EqBand[]>(DEFAULT_EQ_BANDS.map((b) => ({ ...b })));
+
+  const [detectedBpm, setDetectedBpm] = useState<number | null>(null);
+  const [detectedKey, setDetectedKey] = useState<string | null>(null);
+  const [isDetecting, setIsDetecting] = useState(false);
+
+  const [visibleComponents, setVisibleComponents] = useState<Record<string, boolean>>({
+    tonality: true,
+    speed: true,
+    eq: true,
+    bpmkey: true,
+  });
+  const [sceneIndex, setSceneIndex] = useState(0);
+  const sceneIcons = ['☀️', '🌙', '🖥️', '💻'];
+
+  const activeTabIdRef = useRef<number | null>(null);
   const permissionJustGrantedRef = useRef(false);
 
-  // Храним tabId активной вкладки
-  const activeTabIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    chrome.storage.sync.get('visibleComponents', (data) => {
+      if (data.visibleComponents)
+        setVisibleComponents((prev) => ({ ...prev, ...data.visibleComponents }));
+    });
+  }, []);
 
-  // Scene icons (как в оригинале)
-  const sceneIcons = ['light_mode', 'dark_mode', 'desktop_windows', 'computer'];
-  const sceneIcon = sceneIcons[sceneIndex % sceneIcons.length];
-
-  // Получаем tabId активной вкладки
   const getActiveTabId = useCallback(async (): Promise<number | null> => {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -104,38 +73,16 @@ export const SidePanelApp: React.FC = () => {
       return null;
     }
   }, []);
-
-  // Отправка команды напрямую в content script активной вкладки
-  // Как в оригинальном Transpose: dispatchMessage -> chrome.tabs.sendMessage(tabId, message)
-  const sendCommand = useCallback(async (data: Partial<MediaState>, retryCount = 0) => {
+  const sendCommand = useCallback(async (data: Record<string, unknown>, retryCount = 0) => {
     const tabId = activeTabIdRef.current;
-    if (!tabId) {
-      console.warn('[Sidepanel] No active tabId to send command');
-      return;
-    }
-
-    const message = {
-      sender: 'controls',
-      tabId,
-      ...data,
-    };
-
+    if (!tabId) return;
     try {
-      await chrome.tabs.sendMessage(tabId, message);
-      console.log('[Sidepanel] Command sent directly to content script:', tabId, data);
+      await chrome.tabs.sendMessage(tabId, { sender: 'controls', tabId, ...data });
     } catch (err) {
-      console.warn('[Sidepanel] Failed to send command to content script:', String(err));
-      // Если только что дали разрешение — не показываем кнопку,
-      // страница перезагружается, content script временно недоступен
-      if (permissionJustGrantedRef.current) {
-        console.log('[Sidepanel] Permission was just granted, waiting for page reload...');
-        // Пробуем ещё раз через небольшую задержку (до 3 попыток)
-        if (retryCount < 3) {
-          setTimeout(() => sendCommand(data, retryCount + 1), 1000);
-        }
+      if (permissionJustGrantedRef.current && retryCount < 3) {
+        setTimeout(() => sendCommand(data, retryCount + 1), 1000);
         return;
       }
-      // Проверяем permissions для конкретного URL вкладки, а не для *://*/*
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab?.url) {
         const urlObj = new URL(tab.url);
@@ -144,301 +91,350 @@ export const SidePanelApp: React.FC = () => {
         if (!hasPerms) {
           setPendingHostUrl(tab.url);
           setConnectionStatus('no-permission');
-        } else {
-          // Права есть, но content script пока не доступен — повторяем
-          if (retryCount < 3) {
-            console.log('[Sidepanel] Content script not ready yet, retrying...', retryCount + 1);
-            setTimeout(() => sendCommand(data, retryCount + 1), 800);
-          }
+        } else if (retryCount < 3) {
+          setTimeout(() => sendCommand(data, retryCount + 1), 800);
         }
       }
     }
   }, []);
-
-  // Запрос host_permissions для указанного URL (вызывается по клику пользователя)
   const requestHostPermission = useCallback(async (url: string) => {
     try {
       const urlObj = new URL(url);
       const pattern = `${urlObj.protocol}//${urlObj.hostname}/*`;
       const granted = await chrome.permissions.request({ origins: [pattern] });
       if (granted) {
-        console.log('[Sidepanel] Host permission granted for', pattern);
         setPendingHostUrl(null);
         setConnectionStatus('connecting');
-        // Ставим флаг, чтобы игнорировать повторные need-permission
         permissionJustGrantedRef.current = true;
         setTimeout(() => {
           permissionJustGrantedRef.current = false;
         }, 5000);
-      } else {
-        console.warn('[Sidepanel] Host permission denied for', pattern);
       }
-    } catch (err) {
-      console.error('[Sidepanel] Error requesting host permission:', err);
-    }
+    } catch {}
   }, []);
 
-  // Listen for messages from service worker
   useEffect(() => {
     const handleMessage = (msg: ServiceWorkerMessage) => {
-      if (msg.sender === 'service-worker') {
-        if (msg.command === 'connect') {
-          if (msg.noPermissionContext) {
-            setConnectionStatus('no-permission');
-          } else {
-            setConnectionStatus('connected');
-            if (msg.altUrl) {
-              setTabInfo({ url: msg.altUrl, title: msg.altTitle });
-            }
-            // Сохраняем tabId
-            if (msg.tabId) {
-              activeTabIdRef.current = msg.tabId;
-            }
-          }
-          // Progress bar show (как в оригинале)
-          if (progressHideTimerRef.current) {
-            clearTimeout(progressHideTimerRef.current);
-            progressHideTimerRef.current = undefined;
-          }
-          if (!toolbarProgressVisible) {
-            if (progressShowTimerRef.current) {
-              clearTimeout(progressShowTimerRef.current);
-            }
-            progressShowTimerRef.current = setTimeout(() => {
-              progressShowTimerRef.current = undefined;
-              setToolbarProgressVisible(true);
-            }, progressShowDelayMs);
-          }
-        }
-        // Если пришёл need-permission — запоминаем URL для кнопки "Разрешить доступ"
-        // Игнорируем, если только что дали разрешение (страница перезагружается)
-        if ((msg as any).command === 'need-permission' && !permissionJustGrantedRef.current) {
-          setPendingHostUrl((msg as any).url || null);
+      if (msg.sender === 'service-worker' && msg.command === 'connect') {
+        if (msg.noPermissionContext) setConnectionStatus('no-permission');
+        else {
+          setConnectionStatus('connected');
+          if (msg.tabId) activeTabIdRef.current = msg.tabId;
         }
       }
     };
-
     chrome.runtime.onMessage.addListener(handleMessage);
-
-    // При открытии сайдпанели получаем tabId активной вкладки
-    // и отправляем запрос service-worker, чтобы он ответил connect
     getActiveTabId().then((tabId) => {
-      if (tabId) {
-        activeTabIdRef.current = tabId;
-        console.log('[Sidepanel] Active tab ID:', tabId);
-      }
-      // Отправляем сообщение service-worker, чтобы получить connect
+      if (tabId) activeTabIdRef.current = tabId;
       chrome.runtime.sendMessage({ sender: 'sidepanel', command: 'ping' }).catch(() => {});
     });
-
     return () => {
       chrome.runtime.onMessage.removeListener(handleMessage);
-      if (progressShowTimerRef.current) clearTimeout(progressShowTimerRef.current);
-      if (progressHideTimerRef.current) clearTimeout(progressHideTimerRef.current);
     };
-  }, [toolbarProgressVisible, getActiveTabId]);
+  }, [getActiveTabId]);
 
   const handleSemitoneChange = useCallback(
-    (value: number) => {
-      setMedia((prev) => ({ ...prev, semitone: value }));
-      sendCommand({ semitone: value });
+    (v: number) => {
+      setSemitone(v);
+      sendCommand({ semitone: v });
     },
     [sendCommand],
   );
-
+  const handleBpmChange = useCallback(
+    (v: number) => {
+      setBpm(v);
+      setSpeed(1);
+      sendCommand({ speed: v / 128 });
+    },
+    [sendCommand],
+  );
   const handleSpeedChange = useCallback(
-    (value: number) => {
-      setMedia((prev) => ({ ...prev, speed: value }));
-      sendCommand({ speed: value });
+    (v: number) => {
+      setSpeed(v);
+      sendCommand({ speed: v });
     },
     [sendCommand],
   );
-
   const handleEqToggle = useCallback(
-    (checked: boolean) => {
-      setMedia((prev) => ({ ...prev, eqEnabled: checked }) as any);
-      sendCommand({ eqEnabled: checked } as any);
+    (c: boolean) => {
+      setEqEnabled(c);
+      sendCommand({ eqEnabled: c });
     },
     [sendCommand],
   );
-
   const handleEqBandChange = useCallback(
-    (index: number, gain: number) => {
-      setEqBands((prev) => {
-        const updated = [...prev];
-        updated[index] = { ...updated[index], gain };
-        return updated;
+    (i: number, g: number) => {
+      setEqBands((p) => {
+        const u = [...p];
+        u[i] = { ...u[i], gain: g };
+        return u;
       });
-      sendCommand({ eqBand: { index, gain } } as any);
+      sendCommand({ eqBand: { index: i, gain: g } });
     },
     [sendCommand],
   );
-
-  const cycleScene = useCallback(() => {
-    setSceneIndex((prev) => (prev + 1) % sceneIcons.length);
-    // Отправляем команду смены сцены напрямую в content script
-    const tabId = activeTabIdRef.current;
-    if (tabId) {
-      chrome.tabs
-        .sendMessage(tabId, { sender: 'controls', tabId, command: 'cycle-scene' })
-        .catch(() => {});
-    }
+  const handleVisibleComponentToggle = useCallback((key: string) => {
+    setVisibleComponents((prev) => {
+      const updated = { ...prev, [key]: !prev[key] };
+      chrome.storage.sync.set({ visibleComponents: updated });
+      return updated;
+    });
   }, []);
+  const cycleScene = useCallback(() => setSceneIndex((p) => (p + 1) % sceneIcons.length), []);
+  const togglePower = useCallback(() => {
+    setPowerOn((p) => !p);
+    sendCommand({ command: 'toggle-power' });
+  }, [sendCommand]);
 
-  const saveCurrentMedia = useCallback(() => {
-    const tabId = activeTabIdRef.current;
-    if (tabId) {
-      chrome.tabs
-        .sendMessage(tabId, { sender: 'controls', tabId, command: 'save-media' })
-        .catch(() => {});
-    }
-  }, []);
+  const tbBtn =
+    'w-7 h-7 rounded-full border-0 bg-transparent cursor-pointer flex items-center justify-center text-[14px]';
 
-  const togglePowerOnOff = useCallback(() => {
-    setPowerOn((prev) => !prev);
-    const tabId = activeTabIdRef.current;
-    if (tabId) {
-      chrome.tabs
-        .sendMessage(tabId, { sender: 'controls', tabId, command: 'toggle-power' })
-        .catch(() => {});
-    }
-  }, []);
+  const renderHeader = () => (
+    <header
+      className="flex items-center justify-between px-2.5 py-2 border-b gap-1 flex-shrink-0"
+      style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', height: '40px' }}>
+      <div className="flex items-center gap-0.5">
+        <Logo />
+        <button
+          className={tbBtn}
+          style={{ color: 'var(--text-secondary)' }}
+          onClick={cycleScene}
+          title="Сменить тему оформления">
+          {sceneIcons[sceneIndex % sceneIcons.length]}
+        </button>
+        <button
+          className={tbBtn}
+          style={{ color: 'var(--text-secondary)' }}
+          onClick={() => setCurrentPage('history')}
+          title="История">
+          📋
+        </button>
+      </div>
+      <span
+        className="font-semibold tracking-[0.3px] uppercase text-center flex-1"
+        style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+        MUSIC PITCH CHANGER
+      </span>
+      <div className="flex items-center gap-0.5">
+        <button
+          className={tbBtn}
+          style={{ color: 'var(--text-secondary)' }}
+          onClick={() => sendCommand({ command: 'save-media' })}
+          title="Сохранить настройки трека">
+          💾
+        </button>
+        <span
+          className={tbBtn}
+          style={{ color: 'var(--text-muted)', opacity: 0.5, cursor: 'not-allowed' }}
+          title="Поделиться (PRO)">
+          ↗
+        </span>
+        <button
+          className={tbBtn}
+          style={{ color: powerOn ? 'var(--accent-secondary)' : 'var(--text-muted)' }}
+          onClick={togglePower}
+          title={powerOn ? 'Выключить обработку' : 'Включить обработку'}>
+          ⏻
+        </button>
+        <button
+          className={tbBtn}
+          style={{ color: 'var(--text-secondary)' }}
+          onClick={() => setCurrentPage('settings')}
+          title="Настройки">
+          ⚙
+        </button>
+        <span style={{ fontSize: '10px', marginLeft: '2px' }}>{isDark ? '🌙' : '☀️'}</span>
+        <div
+          onClick={toggleTheme}
+          className="relative cursor-pointer rounded-full"
+          style={{
+            width: '20px',
+            height: '10px',
+            background: isDark ? 'var(--toggle-active-bg)' : 'var(--toggle-bg)',
+          }}>
+          <div
+            className="absolute top-0.5 rounded-full transition-all"
+            style={{
+              width: '6px',
+              height: '6px',
+              background: 'var(--toggle-knob)',
+              left: isDark ? '12px' : '2px',
+            }}
+          />
+        </div>
+      </div>
+    </header>
+  );
 
-  const handleClose = useCallback(() => {
-    window.close();
-  }, []);
+  const renderMain = () => (
+    <div className="flex-1 px-4 py-3.5" style={{ overflowY: 'auto' }}>
+      {pendingHostUrl && (
+        <div
+          className="flex flex-col items-center justify-center gap-3 py-10 text-center"
+          style={{ color: 'var(--text-secondary)' }}>
+          <p>Требуется доступ к сайту</p>
+          <button
+            onClick={() => requestHostPermission(pendingHostUrl)}
+            className="px-4 py-2 rounded-lg border-0 cursor-pointer font-medium text-white text-[12px]"
+            style={{ background: 'var(--accent-primary)' }}>
+            Разрешить доступ
+          </button>
+        </div>
+      )}
+      {!pendingHostUrl && connectionStatus === 'connecting' && (
+        <div className="flex flex-col items-center justify-center gap-3 py-10">
+          <div
+            className="w-8 h-8 rounded-full border-[3px] animate-spin"
+            style={{ borderColor: 'var(--border)', borderTopColor: 'var(--accent-secondary)' }}
+          />
+          <div className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+            Подключение...
+          </div>
+        </div>
+      )}
+      {!pendingHostUrl && connectionStatus === 'connected' && (
+        <>
+          {visibleComponents.tonality && (
+            <TonalityCard semitone={semitone} onChange={handleSemitoneChange} />
+          )}
+          {visibleComponents.speed && (
+            <SpeedCard
+              mediaType={mediaType}
+              bpm={bpm}
+              speed={speed}
+              onBpmChange={handleBpmChange}
+              onSpeedChange={handleSpeedChange}
+            />
+          )}
+          {visibleComponents.eq && (
+            <EqCard
+              enabled={eqEnabled}
+              bands={eqBands}
+              onToggle={handleEqToggle}
+              onBandChange={handleEqBandChange}
+            />
+          )}
+          {visibleComponents.bpmkey && (
+            <BpmKeyCard bpm={detectedBpm} keyCamelot={detectedKey} isLoading={isDetecting} />
+          )}
+        </>
+      )}
+    </div>
+  );
 
-  const handleGrantPermission = useCallback(() => {
-    if (pendingHostUrl) {
-      requestHostPermission(pendingHostUrl);
-    }
-  }, [pendingHostUrl, requestHostPermission]);
+  const renderSettings = () => (
+    <div className="flex-1 px-4 py-3.5" style={{ overflowY: 'auto' }}>
+      <button
+        onClick={() => setCurrentPage('main')}
+        className="flex items-center gap-1 mb-3 border-0 bg-transparent cursor-pointer"
+        style={{ color: 'var(--accent-secondary)', fontSize: '11px' }}>
+        ← Назад
+      </button>
+      <h3
+        className="font-semibold tracking-wider mb-3"
+        style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+        Настройки
+      </h3>
+      <div className="flex justify-between items-center py-2">
+        <span className="text-[12px]" style={{ color: 'var(--text-primary)' }}>
+          Тема
+        </span>
+        <div className="flex items-center gap-2">
+          <span>{isDark ? '🌙' : '☀️'}</span>
+          <div
+            onClick={toggleTheme}
+            className="relative cursor-pointer rounded-full"
+            style={{
+              width: '28px',
+              height: '14px',
+              background: isDark ? 'var(--toggle-active-bg)' : 'var(--toggle-bg)',
+            }}>
+            <div
+              className="absolute top-0.5 rounded-full transition-all"
+              style={{
+                width: '10px',
+                height: '10px',
+                background: 'var(--toggle-knob)',
+                left: isDark ? '16px' : '2px',
+              }}
+            />
+          </div>
+        </div>
+      </div>
+      <div
+        className="flex justify-between items-center py-2 border-t"
+        style={{ borderColor: 'var(--border)' }}>
+        <span className="text-[12px]" style={{ color: 'var(--text-primary)' }}>
+          Режим интерфейса
+        </span>
+        <select
+          className="rounded px-2 py-1 text-[11px] border"
+          style={{
+            background: 'var(--bg-card)',
+            color: 'var(--text-primary)',
+            borderColor: 'var(--border)',
+          }}
+          onChange={(e) => chrome.storage.sync.set({ uiMode: e.target.value })}>
+          <option value="popup">Popup</option>
+          <option value="sidepanel">Side Panel</option>
+        </select>
+      </div>
+      <div className="border-t py-2" style={{ borderColor: 'var(--border)' }}>
+        <span className="text-[12px]" style={{ color: 'var(--text-primary)' }}>
+          Компоненты
+        </span>
+        {[
+          { key: 'tonality', label: 'Тональность' },
+          { key: 'speed', label: 'Скорость' },
+          { key: 'eq', label: 'Эквалайзер' },
+          { key: 'bpmkey', label: 'BPM & Key' },
+        ].map(({ key, label }) => (
+          <div key={key} className="flex justify-between items-center py-1.5">
+            <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+              {label}
+            </span>
+            <div
+              onClick={() => handleVisibleComponentToggle(key)}
+              className="relative cursor-pointer rounded-full"
+              style={{
+                width: '28px',
+                height: '14px',
+                background: visibleComponents[key] ? 'var(--toggle-active-bg)' : 'var(--toggle-bg)',
+              }}>
+              <div
+                className="absolute top-0.5 rounded-full transition-all"
+                style={{
+                  width: '10px',
+                  height: '10px',
+                  background: 'var(--toggle-knob)',
+                  left: visibleComponents[key] ? '16px' : '2px',
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
-    <div className={`sidepanel-shell has-${currentPage}`}>
-      {/* MatToolbar - как в оригинале Fd class */}
-      <header className="mat-toolbar" role="toolbar">
-        {/* Left section */}
-        <span>
+    <div className="flex flex-col h-full">
+      {renderHeader()}
+      {currentPage === 'main' && renderMain()}
+      {currentPage === 'history' && (
+        <div className="flex-1 flex flex-col" style={{ overflowY: 'auto' }}>
           <button
-            className="mat-mdc-icon-button toolbar-action-button"
-            onClick={() => setCurrentPage('history')}
-            title={translate('toolbar.historyTooltip') || 'History'}>
-            <span className="material-icons">queue_music</span>
+            onClick={() => setCurrentPage('main')}
+            className="flex items-center gap-1 mx-4 mt-3 mb-1 border-0 bg-transparent cursor-pointer flex-shrink-0"
+            style={{ color: 'var(--accent-secondary)', fontSize: '11px' }}>
+            ← Назад
           </button>
-          <button
-            className="mat-mdc-icon-button toolbar-action-button scene-button"
-            onClick={cycleScene}
-            title={translate('toolbar.sceneTooltip') || 'Change scene'}>
-            <span className="material-icons">{sceneIcon}</span>
-          </button>
-          {/* PRO badge (как в оригинале) */}
-          {hasPro && (
-            <button
-              className="mat-mdc-icon-button toolbar-action-button toolbar-promo-button"
-              onClick={() => {}}
-              title="PRO">
-              <ProBadge />
-            </button>
-          )}
-          {/* PRO trial button (как в оригинале) */}
-          {isProTrial && !hasPro && (
-            <button
-              className="btn btn-small btn-primary toolbar-trial-button"
-              onClick={() => {
-                chrome.tabs.create({
-                  url: chrome.runtime.getURL('sidepanel/index.html#/upgrade'),
-                });
-              }}>
-              {translate('toolbar.trial') || 'Trial'}
-            </button>
-          )}
-        </span>
-        {/* Right section */}
-        <span>
-          <button
-            className="mat-mdc-icon-button toolbar-action-button"
-            onClick={saveCurrentMedia}
-            disabled={!media}
-            title={translate('toolbar.saveTooltip') || 'Save'}>
-            <span className="material-icons save-toolbar-icon">save</span>
-          </button>
-          {/* Share button (как в оригинале, только для PRO) */}
-          {hasPro && (
-            <button
-              className="mat-mdc-icon-button toolbar-action-button"
-              onClick={() => {
-                const tabId = activeTabIdRef.current;
-                if (tabId) {
-                  chrome.tabs
-                    .sendMessage(tabId, { sender: 'controls', tabId, command: 'share-media' })
-                    .catch(() => {});
-                }
-              }}
-              title={translate('toolbar.shareTooltip') || 'Share'}>
-              <span className="material-icons">share</span>
-            </button>
-          )}
-          <button
-            className="mat-mdc-icon-button toolbar-action-button"
-            onClick={togglePowerOnOff}
-            title={
-              powerOn
-                ? translate('toolbar.disableTooltip') || 'Disable'
-                : translate('toolbar.enableTooltip') || 'Enable'
-            }>
-            <span className="material-icons">
-              {powerOn ? 'power_settings_new' : 'remove_circle_outline'}
-            </span>
-          </button>
-          <button
-            className="mat-mdc-icon-button toolbar-action-button"
-            onClick={() => setCurrentPage('settings')}
-            title={translate('toolbar.settingsTooltip') || 'Settings'}>
-            <span className="material-icons">tune</span>
-          </button>
-        </span>
-        {/* Progress bar */}
-        <div className={`mat-progress-bar ${toolbarProgressVisible ? 'visible' : ''}`}>
-          <div className="mat-progress-bar-indeterminate" />
-        </div>
-      </header>
-
-      {/* Subscription Alert (как в оригинале app-subscription-alert) */}
-      <SubscriptionAlert />
-
-      {/* Content Area - router-outlet аналог */}
-      <main className="app-container sidepanel-content">
-        {currentPage === 'main' && pendingHostUrl && (
-          <div className="no-permission">
-            <p>Требуется доступ к сайту</p>
-            <p className="subtitle">
-              Разрешите расширению доступ к {new URL(pendingHostUrl).hostname}
-            </p>
-            <button className="mat-mdc-raised-button" onClick={handleGrantPermission}>
-              Разрешить доступ
-            </button>
+          <div className="flex-1" style={{ overflowY: 'auto' }}>
+            <HistoryPage isSidePanel={true} />
           </div>
-        )}
-        {currentPage === 'main' && !pendingHostUrl && (
-          <AudioControls
-            media={media}
-            connectionStatus={connectionStatus}
-            onSemitoneChange={handleSemitoneChange}
-            onSpeedChange={handleSpeedChange}
-            onEqToggle={handleEqToggle}
-            eqBands={eqBands}
-            onEqBandChange={handleEqBandChange}
-          />
-        )}
-        {currentPage === 'history' && <HistoryPage isSidePanel={true} />}
-        {currentPage === 'settings' && (
-          <div className="empty-message">{translate('settings.title') || 'Settings'}</div>
-        )}
-      </main>
-
-      {/* Pro Banner */}
-      <ProBannerSidepanel />
+        </div>
+      )}
+      {currentPage === 'settings' && renderSettings()}
     </div>
   );
 };

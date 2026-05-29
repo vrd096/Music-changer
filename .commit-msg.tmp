@@ -1,0 +1,12 @@
+Ребрендинг и редизайн: Transpose -> Music Pitch Changer
+
+- Полный ребрендинг (package.json, manifest.json, локали EN/RU, строки)
+- Удалены ссылки на transpose.video, externally_connectable
+- Tailwind CSS v4, тёмная/светлая темы, CSS-переменные, хук useTheme
+- Popup: TonalityCard, SpeedCard (BPM +-30, лимиты, min/max), EqCard, BpmKeyCard
+- SidePanel: полный тулбар (сцена, история, сохранить, share, power, настройки)
+- Settings: тема, режим интерфейса, видимость компонентов
+- Новые иконки (фиолетово-синий градиент), SVG-логотип waveform
+- Кнопки Назад в History/Settings
+- Контрастные свитчеры в тёмной теме
+- Осмысленные tooltip'ы на русском
