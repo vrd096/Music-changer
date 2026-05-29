@@ -1,7 +1,3 @@
-// ============================================================
-// Tab capture page - audio processing with WASM/AudioWorklet
-// ============================================================
-
 import { runtimeLog } from '../shared/runtime-logger';
 import { createEqChain, applyEqBands, type EqBand } from './eq-chain';
 
@@ -60,19 +56,11 @@ const settings: AudioSettings = {
   appCheckSum: 0,
 };
 
-// ---------------------------------------------------------------------------
-// URL params
-// ---------------------------------------------------------------------------
 const urlParams = new URLSearchParams(window.location.search);
 const requestedTabId = Number(urlParams.get('tabId'));
 const requestedWindowId = Number(urlParams.get('windowId'));
 const streamId = urlParams.get('streamId') || undefined;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Serialize an error/object safely */
 function serializeError(error: unknown): unknown {
   if (error == null) return error;
   if (error instanceof Error) {
@@ -88,7 +76,6 @@ function serializeError(error: unknown): unknown {
   return String(error);
 }
 
-/** Format a user-friendly error message */
 function formatErrorMessage(msg: string): string {
   const trimmed = (msg || 'Tab capture failed').trim();
   const lower = trimmed.toLowerCase();
@@ -101,7 +88,6 @@ function formatErrorMessage(msg: string): string {
   return trimmed;
 }
 
-/** Log error to runtime log and send to service worker */
 async function logTabCaptureError(details: unknown, message?: string): Promise<void> {
   runtimeLog.error('tabcapture', 'tabcapture-error', {
     details,
@@ -127,9 +113,6 @@ async function logTabCaptureError(details: unknown, message?: string): Promise<v
   }
 }
 
-// ---------------------------------------------------------------------------
-// Error event listeners
-// ---------------------------------------------------------------------------
 window.addEventListener('error', (evt: ErrorEvent) => {
   const errInfo = {
     message: evt.message,
@@ -146,23 +129,14 @@ window.addEventListener('unhandledrejection', (evt: PromiseRejectionEvent) => {
   logTabCaptureError(errInfo, 'Unhandled rejection');
 });
 
-// ---------------------------------------------------------------------------
-// Messaging
-// ---------------------------------------------------------------------------
-
-/** Send a message to the service worker */
 function sendToServiceWorker(msg: Record<string, unknown>): void {
   msg.sender = 'tabcapture-tab';
   msg.tabId = tabId;
   chrome.runtime.sendMessage(msg, () => {
-    // Suppress lastError if receiver closed
     void chrome.runtime.lastError;
   });
 }
 
-// ---------------------------------------------------------------------------
-// Audio processing
-/** Apply EQ band settings (wrapper using module-level state) */
 function applyLocalEqBands(eqBands: EqBand[] | undefined, eqEnabled: boolean | undefined): void {
   if (!settings.pro) return;
 
@@ -194,16 +168,11 @@ function applyLocalEqBands(eqBands: EqBand[] | undefined, eqEnabled: boolean | u
   }
 }
 
-// ---------------------------------------------------------------------------
-// Capture initialization
-// ---------------------------------------------------------------------------
-
 async function initCapture(): Promise<void> {
   if (initPromise) await initPromise;
   else {
     initPromise = (async () => {
       try {
-        // Get media stream
         const stream = await new Promise<MediaStream | null>(async (resolve) => {
           if (streamId) {
             try {
@@ -247,7 +216,6 @@ async function initCapture(): Promise<void> {
           return;
         }
 
-        // Listen for stream inactivity
         stream.addEventListener('inactive', () => {
           window.close();
         });
@@ -258,7 +226,6 @@ async function initCapture(): Promise<void> {
 
         const scriptPath = chrome.runtime.getURL('');
 
-        // Create EQ chain for pro mode
         if (settings.pro) {
           eqFilters = createEqChain(audioContext);
         }
@@ -309,15 +276,10 @@ async function initCapture(): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Command processing
-// ---------------------------------------------------------------------------
-
 async function processCommand(msg: TabCaptureCommand): Promise<void> {
   try {
     switch (msg.command) {
       case 'set':
-        // Update settings
         settings.pro = msg.pro ?? settings.pro;
         settings.license = msg.license ?? settings.license;
         settings.licenseCheckSum = msg.licenseCheckSum ?? settings.licenseCheckSum;
@@ -329,12 +291,10 @@ async function processCommand(msg: TabCaptureCommand): Promise<void> {
           settings.pro = false;
         }
 
-        // Start capture if not already running
         if (!isCapturing) {
           await initCapture();
         }
 
-        // Update processor params
         processorNode?.setParams({
           pitch: msg.pitch,
           semitone: msg.semitone,
@@ -348,7 +308,6 @@ async function processCommand(msg: TabCaptureCommand): Promise<void> {
           enabled: settings.audioProcessorEnabled,
         });
 
-        // Apply EQ bands
         if (msg.eqBands !== undefined || msg.eqEnabled !== undefined) {
           applyLocalEqBands(msg.eqBands, msg.eqEnabled);
         }
@@ -365,19 +324,13 @@ async function processCommand(msg: TabCaptureCommand): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Cleanup
-// ---------------------------------------------------------------------------
-
 function cleanupCapture(): void {
   try {
-    // Disconnect source
     if (sourceNode) {
       sourceNode.disconnect();
       sourceNode = null;
     }
 
-    // Disconnect processor
     if (processorNode) {
       processorNode.disconnect();
       processorNode = null;
@@ -385,7 +338,6 @@ function cleanupCapture(): void {
 
     isCapturing = false;
 
-    // Stop media tracks
     if (mediaStream) {
       for (const track of mediaStream.getTracks()) {
         try {
@@ -397,7 +349,6 @@ function cleanupCapture(): void {
       mediaStream = null;
     }
 
-    // Close audio context
     if (audioContext) {
       audioContext.close().catch(() => {});
       audioContext = null;
@@ -407,27 +358,16 @@ function cleanupCapture(): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Message listener
-// ---------------------------------------------------------------------------
-
 chrome.runtime.onMessage.addListener((msg: any, sender: chrome.runtime.MessageSender) => {
-  // Ignore messages from ourselves
   if (msg.sender === 'tabcapture-tab') return;
-  // Ignore service-worker timeupdate messages
   if (msg.sender === 'service-worker' || msg.command === 'timeupdate') return;
 
   const msgTabId = msg.tabId ?? sender.tab?.id;
 
-  // Only process messages for our tab
   if (typeof tabId === 'number' && typeof msgTabId === 'number' && msgTabId !== tabId) return;
 
   processCommand(msg);
 });
-
-// ---------------------------------------------------------------------------
-// Exit button
-// ---------------------------------------------------------------------------
 
 document.querySelector('#exitButton')?.addEventListener('click', () => {
   if (typeof tabId === 'number') {
@@ -436,12 +376,7 @@ document.querySelector('#exitButton')?.addEventListener('click', () => {
   window.close();
 });
 
-// ---------------------------------------------------------------------------
-// Initialization
-// ---------------------------------------------------------------------------
-
 (async function init(): Promise<void> {
-  // Determine tab ID
   if (Number.isFinite(requestedTabId) && requestedTabId > 0) {
     tabId = requestedTabId;
     try {
@@ -471,7 +406,6 @@ document.querySelector('#exitButton')?.addEventListener('click', () => {
     tabId = activeTab.id;
   }
 
-  // Monitor target tab navigation
   if (typeof tabId === 'number') {
     const targetTabId = tabId;
     tabUpdateListener = (changedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
@@ -491,13 +425,8 @@ document.querySelector('#exitButton')?.addEventListener('click', () => {
     chrome.tabs.onUpdated.addListener(tabUpdateListener);
   }
 
-  // Notify service worker that tab capture is active
   sendToServiceWorker({ command: 'tabCapture' } as any);
 })();
-
-// ---------------------------------------------------------------------------
-// Before unload
-// ---------------------------------------------------------------------------
 
 window.addEventListener('beforeunload', () => {
   try {

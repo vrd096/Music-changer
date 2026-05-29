@@ -1,14 +1,8 @@
-// ============================================================
-// Service Worker (Background Script) - Manifest V3
-// ============================================================
-
 import { runtimeLog } from '../shared/runtime-logger';
 import { isBlockedUrl, isVivExt, isYaBrowser, hasSidePanel } from '../shared/helpers';
 import type { ServiceWorkerMessage, ContentMessage } from '../shared/types';
 import { hasHostPermissions, registerContentScripts } from './content-scripts';
 import { updateBadge, highlightToolbarIcon } from './badge';
-
-// --- UI Mode Detection ---
 
 let uiMode: 'popup' | 'sidepanel' = 'popup';
 let sidePanelEnabled = false;
@@ -51,8 +45,6 @@ async function detectUiMode(): Promise<void> {
 
 const initPromise = detectUiMode();
 
-// --- Side Panel Management ---
-
 async function ensureSidePanelForTab(tabId: number, setEnabled = false): Promise<void> {
   try {
     if (!sidePanelEnabled) return;
@@ -82,8 +74,6 @@ function isSidePanelMode(): boolean {
   return sidePanelEnabled && uiMode === 'sidepanel';
 }
 
-// --- Tab UI Update ---
-
 async function updateUiForTab(tab: chrome.tabs.Tab | undefined): Promise<void> {
   if (!tab?.id) return;
   try {
@@ -107,8 +97,6 @@ async function updateUiForTab(tab: chrome.tabs.Tab | undefined): Promise<void> {
   }
 }
 
-// --- Messaging ---
-
 async function sendRuntimeMessage(msg: ServiceWorkerMessage, context: string): Promise<boolean> {
   try {
     await chrome.runtime.sendMessage(msg);
@@ -119,7 +107,6 @@ async function sendRuntimeMessage(msg: ServiceWorkerMessage, context: string): P
       msgStr.includes('Receiving end does not exist') ||
       msgStr.includes('The message port closed before a response was received')
     ) {
-      // Expected when no popup/sidepanel is open
       return false;
     }
     runtimeLog.error('[SW] Error sending runtime message', { context, error: err });
@@ -148,16 +135,12 @@ async function sendWithRetry(
   }
 }
 
-// --- Message Processing ---
-// Обрабатывает сообщения ТОЛЬКО от content script (у них есть tabId)
-
 function processMessage(
   msg: ServiceWorkerMessage | ContentMessage,
   tabId: number,
   senderUrl?: string,
 ): void {
   try {
-    // Handle content script messages
     const contentMsg = msg as ContentMessage;
 
     if (contentMsg.type === 'main-console-error') {
@@ -211,7 +194,6 @@ function processMessage(
       return;
     }
 
-    // Handle dispatcher-ready (from content-dispatcher via chrome.runtime.sendMessage)
     const anyMsg = msg as any;
     if (anyMsg.command === 'dispatcher-ready' && tabId) {
       if (!isThrottled(String(tabId))) {
@@ -225,7 +207,6 @@ function processMessage(
       return;
     }
 
-    // Обновляем badge при получении set/set-from-content от content script
     if (anyMsg.command === 'set' || anyMsg.command === 'set-from-content') {
       const semitone = anyMsg.semitone ?? anyMsg.media?.semitone;
       const loopMode = anyMsg.loopMode;
@@ -239,14 +220,10 @@ function processMessage(
   }
 }
 
-// --- Event Listeners ---
-
-// Startup
 chrome.runtime.onStartup.addListener(async () => {
   await detectUiMode();
 });
 
-// Installation
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === 'install' || reason === 'update') {
     try {
@@ -258,7 +235,6 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   }
 });
 
-// Permissions
 chrome.permissions.onAdded.addListener(async (perms) => {
   await registerContentScripts().catch((err) => {
     runtimeLog.error('[SW] registerContentScripts on permissions.onAdded failed', err);
@@ -313,7 +289,6 @@ chrome.permissions.onRemoved.addListener(() => {
   });
 });
 
-// Storage changes
 chrome.storage.onChanged.addListener(async (changes, area) => {
   if (area === 'sync' && changes.uiMode) {
     if (changes.uiMode.newValue === undefined) return;
@@ -329,7 +304,6 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
   }
 });
 
-// Action click
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) {
     runtimeLog.error('[SW] Could not retrieve active tab information on action click');
@@ -382,7 +356,6 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 });
 
-// Tab activation
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   try {
     await initPromise;
@@ -412,7 +385,6 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   }
 });
 
-// Tab removal
 chrome.tabs.onRemoved.addListener((tabId) => {
   sidePanelTabs.delete(tabId);
   connectedTabs.delete(tabId);
@@ -424,7 +396,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
-// Tab update
 const tabUrls = new Map<number, string>();
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -466,20 +437,16 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 });
 
-// Runtime messages
 chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
   try {
     const tabId = msg.tabId ?? sender.tab?.id;
 
-    // Если есть tabId — обрабатываем как сообщение от content script
     if (tabId) {
       processMessage(msg, tabId, sender.tab?.url);
       sendResponse(true);
       return;
     }
 
-    // Сообщения без tabId — от popup или sidepanel.
-    // Отправляем connect обратно, чтобы попап знал статус соединения
     (async () => {
       try {
         const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -493,7 +460,6 @@ chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
           };
           await chrome.runtime.sendMessage(connectMsg).catch(() => {});
         } else {
-          // Нет активной вкладки
           const noTabMsg: ServiceWorkerMessage = {
             sender: 'service-worker',
             command: 'connect',
@@ -509,12 +475,9 @@ chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
     })();
 
     sendResponse(true);
-  } catch {
-    // Ignore
-  }
+  } catch {}
 });
 
-// External messages (from transpose.video)
 chrome.runtime.onMessageExternal.addListener((msg: any, _sender, sendResponse) => {
   if (msg.type === 'ping') {
     sendResponse({ status: 'success', message: 'pong' });

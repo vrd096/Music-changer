@@ -1,7 +1,3 @@
-// ============================================================
-// Runtime logger - logs errors/warnings to chrome.storage.local
-// ============================================================
-
 import type { LogEntry } from './types';
 import {
   RUNTIME_LOG_KEY,
@@ -103,9 +99,7 @@ export const runtimeLog = {
 
       const updated = [...entries, newEntry].slice(-RUNTIME_LOG_MAX);
       await chrome.storage.local.set({ [RUNTIME_LOG_KEY]: updated });
-    } catch {
-      // Silently fail - logging should never throw
-    }
+    } catch {}
   },
 
   log(..._args: unknown[]): Promise<void> {
@@ -133,8 +127,6 @@ export const runtimeLog = {
     try {
       if (!chrome?.storage?.local) return;
       await chrome.storage.local.remove(RUNTIME_LOG_KEY);
-    } catch {
-      // Silently fail
-    }
+    } catch {}
   },
 };

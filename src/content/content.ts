@@ -1,37 +1,21 @@
-// ============================================================
-// Content Script - runs in MAIN world
-// Audio processing engine: manages playback rate, pitch, semitone,
-// formant, and loop mode for media elements on the page.
-// ============================================================
-
 import { isBlockedUrl } from '../shared/helpers';
 import { INIT_FLAG } from './media-detection';
 import { createAudioEngine, type AudioEngineAPI } from './audio-engine';
 
-// ============================================================
-// Main initialization
-// ============================================================
-
 let audioEngine: AudioEngineAPI | null = null;
 
-// Listen for commands from content-dispatcher (ISOLATED world)
-// Content-dispatcher получает команды от popup/sidepanel через chrome.tabs.sendMessage
-// и пересылает их в MAIN world через CustomEvent 'transpose-dispatch-controls-to-content'
 window.addEventListener('transpose-dispatch-controls-to-content', ((event: CustomEvent) => {
   const msg = event.detail;
   if (!msg || typeof msg !== 'object') return;
 
   console.log('[Content] Received command from dispatcher:', msg);
 
-  // Initialize AudioEngine if needed
   if (!audioEngine) {
     audioEngine = createAudioEngine();
   }
 
-  // Process command
   const { sender, tabId, command, ...params } = msg;
 
-  // Handle 'set' commands (from popup/sidepanel controls)
   if (params.speed !== undefined) {
     audioEngine.setSpeed(params.speed);
   }
@@ -65,10 +49,8 @@ window.addEventListener('transpose-dispatch-controls-to-content', ((event: Custo
     audioEngine.setEqBand(index, gain);
   }
 
-  // Handle 'transport' commands
   if (command === 'transport') {
     if (params.action === 'play') {
-      // Используем адаптер для поиска медиа, либо все video/audio
       const mediaEl = audioEngine ? (audioEngine as any).mediaElement : null;
       if (mediaEl) {
         (mediaEl as HTMLMediaElement).play().catch(() => {});
@@ -89,36 +71,28 @@ window.addEventListener('transpose-dispatch-controls-to-content', ((event: Custo
     }
   }
 
-  // Forward state back to service worker for badge update
   try {
     chrome.runtime.sendMessage({
       ...msg,
       sender: 'content',
       command: 'set-from-content',
     });
-  } catch {
-    /* ignore */
-  }
+  } catch {}
 }) as EventListener);
 
-// Initialize if URL is not blocked
 if (!(window as any)[INIT_FLAG]) {
   (window as any)[INIT_FLAG] = true;
 
   if (!isBlockedUrl(window.location.href)) {
-    // Initialize AudioEngine
     audioEngine = createAudioEngine();
     (window as any).___tp_audioEngine = audioEngine;
 
-    // Signal that content script is ready
     try {
       chrome.runtime.sendMessage({
         type: 'enable-tab-connect',
         url: window.location.href,
         title: document.title,
       });
-    } catch {
-      /* ignore */
-    }
+    } catch {}
   }
 }

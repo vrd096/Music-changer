@@ -1,12 +1,4 @@
-// ============================================================
-// Diagnostics page for Transpose extension
-// ============================================================
-
 import { runtimeLog } from '../../shared/runtime-logger';
-
-// ---------------------------------------------------------------------------
-// DOM helpers
-// ---------------------------------------------------------------------------
 
 function getOrCreatePre(id: string, label?: string): HTMLPreElement {
   let el = document.getElementById(id) as HTMLPreElement | null;
@@ -54,14 +46,8 @@ function logError(label: string, err: unknown): void {
   pre.innerText = (pre.innerText || '') + line;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 const RUNTIME_LOG_KEY = 'runtimeLog';
 
-// ---------------------------------------------------------------------------
-// Redaction
-// ---------------------------------------------------------------------------
 const SENSITIVE_KEY_RE =
   /(token|access|refresh|authorization|auth|jwt|session|cookie|secret|apiKey|apikey|license|licenseKey|patch|accountBinding|enc|key|password|email|uid|customerId|subscription|stsTokenManager)/i;
 const JWT_RE = /^[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+$/;
@@ -98,10 +84,6 @@ function redactSensitiveData(value: unknown, path: unknown[] = []): unknown {
 
   return value;
 }
-
-// ---------------------------------------------------------------------------
-// Runtime log
-// ---------------------------------------------------------------------------
 
 async function loadRuntimeLog(): Promise<void> {
   try {
@@ -150,10 +132,6 @@ async function getActiveTabUrl(): Promise<string | null> {
     return null;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Permissions
-// ---------------------------------------------------------------------------
 
 async function getEffectivePermissions(): Promise<Record<string, unknown>> {
   const perms = await chrome.permissions.getAll();
@@ -226,10 +204,6 @@ async function checkSpotifyPermission(tab?: chrome.tabs.Tab): Promise<boolean> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Audio diagnostics
-// ---------------------------------------------------------------------------
-
 async function runAudioContextDiag(): Promise<Record<string, unknown>> {
   const errors: string[] = [];
   const result: Record<string, unknown> = {
@@ -281,15 +255,10 @@ async function runAudioContextDiag(): Promise<Record<string, unknown>> {
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// Spotify diagnostics
-// ---------------------------------------------------------------------------
-
 async function runSpotifyDiagnostics(): Promise<void> {
   setPreContent('spotify-diag', 'Running...');
   setPreContent('spotify-diag-raw', '');
 
-  // Find Spotify tab
   const spotifyTab = await findSpotifyTab();
   if (!spotifyTab || !spotifyTab.id) {
     setPreContent(
@@ -406,10 +375,6 @@ async function requestSpotifyPermission(): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Copy support diagnostics
-// ---------------------------------------------------------------------------
-
 async function copySupportDiagnostics(): Promise<void> {
   const container = document.querySelector('.diagnostics') || document.body;
   const text = (container as HTMLElement).innerText.trim();
@@ -431,12 +396,7 @@ function setCopyStatus(msg: string, isError = false): void {
   el.style.color = isError ? '#b00020' : '#2e7d32';
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
 (async function main(): Promise<void> {
-  // Create UI elements
   getOrCreatePre('user-agent', 'User agent');
   getOrCreatePre('env', 'Environment');
   getOrCreatePre('managed', 'Managed / enterprise hints');
@@ -460,7 +420,6 @@ function setCopyStatus(msg: string, isError = false): void {
 
   logError('Starting diagnostics', 'OK');
 
-  // Basic info
   setPreContent('user-agent', navigator.userAgent);
   setPreContent('env', {
     crossOriginIsolated:
@@ -489,10 +448,8 @@ function setCopyStatus(msg: string, isError = false): void {
     extensionVersion: chrome?.runtime?.getManifest()?.version ?? null,
   });
 
-  // Permissions
   setPreContent('permissions-effective', await getEffectivePermissions());
 
-  // WASM test
   await (async () => {
     try {
       const wasmBytes = new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]);
@@ -504,7 +461,6 @@ function setCopyStatus(msg: string, isError = false): void {
     }
   })();
 
-  // AudioContext test
   await (async () => {
     try {
       const ACtor = (window as any).AudioContext || (window as any).webkitAudioContext;
@@ -535,7 +491,6 @@ function setCopyStatus(msg: string, isError = false): void {
     }
   })();
 
-  // AudioWorklet test
   await (async () => {
     try {
       const ACtor = (window as any).AudioContext || (window as any).webkitAudioContext;
@@ -568,7 +523,6 @@ function setCopyStatus(msg: string, isError = false): void {
     }
   })();
 
-  // Storage
   (() => {
     try {
       chrome.storage.sync.get((data) => {
@@ -588,15 +542,11 @@ function setCopyStatus(msg: string, isError = false): void {
     }
   })();
 
-  // Spotify permission check
   await checkSpotifyPermission();
-
-  // Runtime log
   await loadRuntimeLog();
 
   logError('Finished diagnostics', 'OK');
 
-  // Button handlers
   document.getElementById('btn-run-spotify')!.addEventListener('click', async () => {
     try {
       await runSpotifyDiagnostics();
@@ -628,7 +578,6 @@ function setCopyStatus(msg: string, isError = false): void {
   document.getElementById('btn-copy-support')!.addEventListener('click', copySupportDiagnostics);
 })().catch((err) => logError('main()', err));
 
-// Clear all data button
 document.getElementById('clear')!.onclick = function () {
   if (
     confirm(

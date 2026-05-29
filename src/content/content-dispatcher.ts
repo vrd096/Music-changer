@@ -1,8 +1,3 @@
-// ============================================================
-// Content Dispatcher - runs in ISOLATED world
-// Bridges MAIN world events to the service worker
-// ============================================================
-
 import { isBlockedUrl } from '../shared/helpers';
 
 const INIT_FLAG = '___tp_isInitialized_dispatcher';
@@ -12,7 +7,6 @@ let isReady = false;
 const messageQueue: any[] = [];
 let isProcessing = false;
 
-// Listen for custom events from MAIN world content script
 window.addEventListener('tp-dispatcher-message', ((event: CustomEvent) => {
   const detail = event.detail;
   if (!detail?.scope || !detail?.event) return;
@@ -20,7 +14,6 @@ window.addEventListener('tp-dispatcher-message', ((event: CustomEvent) => {
   const level = detail.lvl || 'log';
 
   if (level === 'error') {
-    // Forward to service worker
     console.error(`[${detail.scope}] ${detail.event}`, detail.data ?? '');
     try {
       chrome.runtime.sendMessage({
@@ -34,9 +27,7 @@ window.addEventListener('tp-dispatcher-message', ((event: CustomEvent) => {
         },
         pageUrl: window.location.href,
       });
-    } catch {
-      /* ignore */
-    }
+    } catch {}
 
     try {
       chrome.runtime.sendMessage({
@@ -46,18 +37,14 @@ window.addEventListener('tp-dispatcher-message', ((event: CustomEvent) => {
         data: detail.data,
         pageUrl: window.location.href,
       });
-    } catch {
-      /* ignore */
-    }
+    } catch {}
   }
 }) as EventListener);
 
-// Listen for commands from MAIN world
 window.addEventListener('tp-command', ((event: CustomEvent) => {
   const detail = event.detail;
   if (!detail || typeof detail.command !== 'string') return;
 
-  // Skip peak-analysis commands
   if (detail.command === 'peak-analysis') return;
 
   messageQueue.push(detail);
@@ -77,7 +64,6 @@ function processQueue(): void {
     if (chrome.runtime.lastError) {
       const errMsg = chrome.runtime.lastError.message || '';
       if (errMsg.includes('context invalidated')) {
-        // Context was invalidated, ignore
       }
     }
     isProcessing = false;
@@ -85,10 +71,7 @@ function processQueue(): void {
   });
 }
 
-// Listen for commands from service worker (forwarded from popup/sidepanel)
 chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
-  // Диспатчим команды в MAIN world через CustomEvent
-  // Это включает set/set-from-content команды от service-worker (которые пришли от popup/sidepanel)
   try {
     window.dispatchEvent(
       new CustomEvent('transpose-dispatch-controls-to-content', { detail: msg }),
@@ -96,18 +79,15 @@ chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
   } catch (err) {
     const errMsg = String((err as Error)?.message || err || '');
     if (errMsg.includes('Extension context invalidated')) {
-      // ignore
     }
   }
   sendResponse(true);
 });
 
-// Initialize if URL is not blocked
 if (!(window as any)[INIT_FLAG]) {
   (window as any)[INIT_FLAG] = true;
 
   if (!isBlockedUrl(window.location.href)) {
-    // Signal to service worker that dispatcher is ready
     chrome.runtime.sendMessage({
       command: 'dispatcher-ready',
       tabId: undefined as any,

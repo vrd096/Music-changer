@@ -1,8 +1,3 @@
-// ============================================================
-// Shared types for Transpose React Extension
-// ============================================================
-
-/** Marker in a track */
 export interface Marker {
   id: string;
   time: number;
@@ -73,7 +68,6 @@ export interface MediaState {
   notes: string;
   createdAt?: number;
   deletedAt?: number;
-  // Legacy fields for migration (used in normalizeMedia)
   semiTone?: number;
   recordingTuning?: number;
   originalKey?: string;
