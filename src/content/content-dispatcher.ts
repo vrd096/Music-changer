@@ -73,7 +73,7 @@ function processQueue(): void {
 
 chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
   try {
-    window.dispatchEvent(
+    document.dispatchEvent(
       new CustomEvent('transpose-dispatch-controls-to-content', { detail: msg }),
     );
   } catch (err) {
@@ -86,6 +86,9 @@ chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
 
 if (!(window as any)[INIT_FLAG]) {
   (window as any)[INIT_FLAG] = true;
+
+  // Expose extension origin for MAIN world via DOM (shared across worlds)
+  document.documentElement.dataset.tpExtensionOrigin = extensionOrigin;
 
   if (!isBlockedUrl(window.location.href)) {
     chrome.runtime.sendMessage({

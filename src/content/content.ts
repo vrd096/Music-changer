@@ -4,7 +4,7 @@ import { createAudioEngine, type AudioEngineAPI } from './audio-engine';
 
 let audioEngine: AudioEngineAPI | null = null;
 
-window.addEventListener('transpose-dispatch-controls-to-content', ((event: CustomEvent) => {
+document.addEventListener('transpose-dispatch-controls-to-content', ((event: CustomEvent) => {
   const msg = event.detail;
   if (!msg || typeof msg !== 'object') return;
 

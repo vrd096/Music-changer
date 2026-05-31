@@ -48,8 +48,7 @@
       "matches": ["*://*/*"],
       "resources": [
         "rb.wasm",
-        "aw-tp-processor.js",
-        "aw-st-processor.js",
+        "soundtouch-processor.js",
         "assets/i18n/**",
         "popup/**",
         "sidepanel/**",
