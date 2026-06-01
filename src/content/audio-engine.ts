@@ -695,16 +695,7 @@ export function createAudioEngine(): AudioEngineAPI {
     const src = ctx.createBufferSource();
     src.buffer = _beatportAudioBuffer;
     src.playbackRate.value = _getBeatportPlaybackRate();
-
-    // Route through SoundTouchJS worklet if available, otherwise direct
-    const worklet = tpWorkletNode || stWorkletNode;
-    if (worklet) {
-      src.connect(worklet);
-      console.log('[AudioEngine] Beatport BufferSource → worklet');
-    } else {
-      src.connect(ctx.destination);
-      console.log('[AudioEngine] Beatport BufferSource → destination (no worklet)');
-    }
+    src.connect(ctx.destination);
 
     _beatportStartTime = ctx.currentTime;
     const off = Math.max(0, _beatportStartOffset);

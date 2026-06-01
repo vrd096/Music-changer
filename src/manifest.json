@@ -48,6 +48,7 @@
       "matches": ["*://*/*"],
       "resources": [
         "rb.wasm",
+        "bungee-processor.js",
         "soundtouch-processor.js",
         "assets/i18n/**",
         "popup/**",

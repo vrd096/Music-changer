@@ -82,7 +82,7 @@ const requiredFiles = [
   '_locales/ru/messages.json',
   'rb.wasm',
   'bungee-processor.js',
-  'bungee-wasm.bin',
+  'soundtouch-processor.js',
 ];
 
 let allFound = true;
