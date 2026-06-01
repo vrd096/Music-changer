@@ -536,6 +536,11 @@ export function createAudioEngine(): AudioEngineAPI {
     if (mediaElement === element) return;
     mediaElement = element;
     skipAudioWorklet = skp;
+    // Prevent browser from auto-compensating pitch on playbackRate change
+    // (conflicts with SoundTouchJS Master Tempo)
+    try {
+      element.preservesPitch = false;
+    } catch {}
     if (!skp) {
       applyPlaybackRate(state.speed);
       applyLoopMode(state.loopMode);
@@ -695,7 +700,20 @@ export function createAudioEngine(): AudioEngineAPI {
     const src = ctx.createBufferSource();
     src.buffer = _beatportAudioBuffer;
     src.playbackRate.value = _getBeatportPlaybackRate();
-    src.connect(ctx.destination);
+
+    // Route through SoundTouchJS worklet if available, otherwise direct
+    const worklet = tpWorkletNode || stWorkletNode;
+    if (worklet) {
+      src.connect(worklet);
+      console.log(
+        '[AudioEngine] Beatport BufferSource → worklet (channels:',
+        _beatportAudioBuffer.numberOfChannels,
+        ')',
+      );
+    } else {
+      src.connect(ctx.destination);
+      console.log('[AudioEngine] Beatport BufferSource → destination (no worklet)');
+    }
 
     _beatportStartTime = ctx.currentTime;
     const off = Math.max(0, _beatportStartOffset);
