@@ -487,7 +487,19 @@ export function createAudioEngine(): AudioEngineAPI {
         gainNode.connect(ctx.destination);
       }
       if (!sourceNode && !isBeatport) {
-        sourceNode = ctx.createMediaElementSource(mediaElement!);
+        try {
+          sourceNode = ctx.createMediaElementSource(mediaElement!);
+        } catch (e) {
+          // Media element already connected to another AudioContext (e.g. SoundCloud)
+          console.warn(
+            '[AudioEngine] createMediaElementSource failed — falling back to playbackRate only:',
+            (e as Error).message,
+          );
+          isTpReady = true;
+          isStReady = true;
+          workletInitPromise = null;
+          return;
+        }
       }
       // SoundTouchJS AudioWorklet (MPL-2.0 license)
       if (!isTpReady) {
