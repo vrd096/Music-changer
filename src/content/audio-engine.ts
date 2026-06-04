@@ -637,10 +637,12 @@ export function createAudioEngine(): AudioEngineAPI {
       isStReady,
     );
     state.semitone = semitone;
-    initAudioWorklet();
-    applyPitchState();
+    if (isBeatport) {
+      initAudioWorklet();
+      applyPitchState();
+      _updateBeatportPlaybackRate();
+    }
     sendStateUpdate();
-    _updateBeatportPlaybackRate();
   }
   function setPitch(pitch: number): void {
     state.pitch = pitch;

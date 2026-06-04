@@ -124,7 +124,16 @@ export const PopupApp: React.FC = () => {
           if (msg.altUrl) {
             const url = msg.altUrl;
             setMediaType(
-              url.includes('youtube.com') || url.includes('youtu.be') ? 'video' : 'audio',
+              url.includes('youtube.com') ||
+                url.includes('youtu.be') ||
+                url.includes('vkvideo.ru') ||
+                url.includes('vk.com/video') ||
+                url.includes('rutube.ru') ||
+                url.includes('twitch.tv') ||
+                url.includes('vimeo.com') ||
+                url.includes('dailymotion.com')
+                ? 'video'
+                : 'audio',
             );
           }
         }

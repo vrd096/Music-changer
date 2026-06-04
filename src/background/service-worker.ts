@@ -418,6 +418,59 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
   try {
+    if (msg.type === 'request-tabcapture') {
+      const targetTabId = msg.tabId ?? sender.tab?.id;
+      if (targetTabId) {
+        (async () => {
+          try {
+            const hasPerm = await chrome.permissions.contains({
+              permissions: ['tabCapture'],
+            });
+            if (!hasPerm) {
+              const granted = await chrome.permissions.request({
+                permissions: ['tabCapture'],
+              });
+              if (!granted) {
+                sendResponse({
+                  status: 'error',
+                  message: 'tabCapture permission denied by user',
+                });
+                return;
+              }
+            }
+
+            const streamId = await new Promise<string>((resolve, reject) => {
+              chrome.tabCapture.getMediaStreamId(
+                { targetTabId } as chrome.tabCapture.GetMediaStreamOptions,
+                (capturedStreamId: string) => {
+                  if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
+                  }
+                  resolve(capturedStreamId);
+                },
+              );
+            });
+
+            const helperUrl = `tabcapture/tabcapture.html?tabId=${targetTabId}&streamId=${streamId}`;
+            await chrome.tabs.create({ url: helperUrl, active: false });
+            runtimeLog.log('sw', 'tabcapture-started', 'TabCapture helper opened', {
+              targetTabId,
+              streamId: streamId.substring(0, 8) + '...',
+            });
+            sendResponse({ status: 'success' });
+          } catch (err) {
+            runtimeLog.error('sw', 'tabcapture-failed', 'TabCapture failed', {
+              error: String(err),
+              targetTabId,
+            });
+            sendResponse({ status: 'error', message: String(err) });
+          }
+        })();
+        return true;
+      }
+    }
+
     const tabId = msg.tabId ?? sender.tab?.id;
 
     if (tabId) {
