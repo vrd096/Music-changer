@@ -17,6 +17,7 @@ let audioEngine: AudioEngineAPI | null = null;
 let pipelineActive = false;
 let currentStrategyLevel = 0;
 let activeMediaElement: HTMLMediaElement | null = null;
+let lastConnectedSrc = '';
 
 function isDirectHttpAudio(el: HTMLMediaElement): boolean {
   if (el instanceof HTMLVideoElement) return false;
@@ -70,6 +71,7 @@ function applyFallback(el: HTMLMediaElement): void {
   pipeline?.setStrategyLevel(5);
   pipelineActive = true;
   currentStrategyLevel = 5;
+  lastConnectedSrc = el.src || el.currentSrc || '';
 
   const src = el.src || el.currentSrc || '';
   if (src.startsWith('http://') || src.startsWith('https://')) {
@@ -96,9 +98,22 @@ async function tryCascadeStrategies(
   el: HTMLMediaElement,
   strategies: InterceptionStrategy[],
 ): Promise<void> {
-  if (pipelineActive) {
-    console.log('[Content] Pipeline already active, skipping cascade');
-    return;
+  if (pipelineActive && el === activeMediaElement) {
+    const currentSrc = el.src || el.currentSrc || '';
+    if (currentSrc && currentSrc !== lastConnectedSrc) {
+      console.log('[Content] Same element but src changed — reconnecting');
+      lastConnectedSrc = currentSrc;
+      pipelineActive = false;
+    } else {
+      console.log('[Content] Pipeline already active on same element, skipping cascade');
+      return;
+    }
+  }
+
+  if (pipelineActive && el !== activeMediaElement) {
+    console.log('[Content] New media element detected, reconnecting pipeline');
+    pipelineActive = false;
+    activeMediaElement = null;
   }
 
   console.log('[Content] Starting cascade with', strategies.length, 'strategies');
@@ -135,6 +150,7 @@ async function tryCascadeStrategies(
         pipelineActive = true;
         currentStrategyLevel = strategy.level;
         activeMediaElement = el;
+        lastConnectedSrc = el.src || el.currentSrc || '';
         return;
       }
     } catch (err) {

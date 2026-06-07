@@ -112,6 +112,12 @@ export function createPipeline(): ProcessingPipeline {
     workletNode = node;
 
     try {
+      workletNode.disconnect();
+    } catch {
+      // ignore
+    }
+
+    try {
       if (currentSource) {
         currentSource.disconnect();
       }
@@ -136,10 +142,15 @@ export function createPipeline(): ProcessingPipeline {
       }
     }
 
+    try {
+      gainNode.disconnect();
+    } catch {
+      // ignore
+    }
+
     if (eqFilters.length > 0) {
       workletNode.connect(eqFilters[0]);
       const lastFilter = eqFilters[eqFilters.length - 1];
-      lastFilter.disconnect();
       lastFilter.connect(gainNode);
     } else {
       workletNode.connect(gainNode);
