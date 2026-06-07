@@ -4,6 +4,7 @@ import type { AudioEngineState } from '../interception/types';
 
 export interface ProcessingPipeline {
   connect(sourceNode: AudioNode | null, mediaEl?: HTMLMediaElement | null): void;
+  connectSourceNode(sourceNode: AudioNode): void;
   setSpeed(v: number): void;
   setSemitone(v: number): void;
   setPitch(v: number): void;
@@ -13,6 +14,7 @@ export interface ProcessingPipeline {
   setEqEnabled(v: boolean): void;
   setEqBand(index: number, gain: number): void;
   getState(): AudioEngineState;
+  setStrategyLevel(level: number): void;
   destroy(): void;
 }
 
@@ -38,6 +40,16 @@ export function createPipeline(): ProcessingPipeline {
   let mediaElement: HTMLMediaElement | null = null;
   let isDestroyed = false;
   let workletConnected = false;
+  let strategyLevel = 0;
+
+  let isBufferSource = false;
+  let bufferStartOffset = 0;
+  let bufferStartTime = 0;
+  let isBufferPlaying = false;
+  let isBufferSeeking = false;
+  let bufferPlayHandler: (() => void) | null = null;
+  let bufferPauseHandler: (() => void) | null = null;
+  let bufferSeekedHandler: (() => void) | null = null;
 
   const workletLoader: WorkletLoader = createWorkletLoader();
 
@@ -54,6 +66,7 @@ export function createPipeline(): ProcessingPipeline {
         varispeed: state.varispeed,
         eqEnabled: state.eqEnabled,
         eqBands,
+        strategyLevel,
       });
     } catch {
       // ignore
@@ -137,6 +150,127 @@ export function createPipeline(): ProcessingPipeline {
 
     applyPitchState();
     applyEqState();
+    applyBufferPlaybackRate();
+  }
+
+  function getBufferPlaybackRate(): number {
+    if (workletConnected) {
+      return Math.max(0.25, Math.min(16, state.speed || 1));
+    }
+    const pitchRatio = Math.pow(2, (state.semitone || 0) / 12);
+    return Math.max(0.25, Math.min(16, (state.speed || 1) * pitchRatio));
+  }
+
+  function applyBufferPlaybackRate(): void {
+    if (!isBufferSource || !currentSource) return;
+    const rate = getBufferPlaybackRate();
+    const src = currentSource as any;
+    if (src.playbackRate && typeof src.playbackRate.value === 'number') {
+      src.playbackRate.value = rate;
+    }
+  }
+
+  function stopBufferPlayback(): void {
+    if (!isBufferSource || !currentSource) return;
+    const src = currentSource as any;
+    if (src.stop && typeof src.stop === 'function') {
+      src.onended = null;
+      try {
+        src.stop();
+      } catch {
+        // ignore
+      }
+      try {
+        src.disconnect();
+      } catch {
+        // ignore
+      }
+    }
+    isBufferPlaying = false;
+  }
+
+  function startBufferPlayback(): void {
+    if (!isBufferSource || !audioContext) return;
+    const ctx = audioContext;
+
+    stopBufferPlayback();
+
+    const newSrc = ctx.createBufferSource();
+    const oldSrc = currentSource as any;
+    newSrc.buffer = oldSrc.buffer;
+    newSrc.playbackRate.value = getBufferPlaybackRate();
+
+    const worklet = workletNode;
+    if (worklet) {
+      newSrc.connect(worklet);
+    } else {
+      newSrc.connect(gainNode || ctx.destination);
+    }
+
+    bufferStartTime = ctx.currentTime;
+    const off = Math.max(0, bufferStartOffset);
+    const duration = newSrc.buffer?.duration ?? 0;
+    newSrc.start(0, off >= duration ? 0 : off);
+    currentSource = newSrc;
+    isBufferPlaying = true;
+
+    newSrc.onended = () => {
+      if (!isBufferSeeking) {
+        isBufferPlaying = false;
+      }
+    };
+
+    applyPitchState();
+    applyBufferPlaybackRate();
+  }
+
+  function setupBufferElementHooks(el: HTMLMediaElement): void {
+    bufferPlayHandler = () => {
+      if (isBufferSource && !isBufferPlaying) {
+        bufferStartOffset = el.currentTime;
+        startBufferPlayback();
+      }
+    };
+
+    bufferPauseHandler = () => {
+      if (isBufferSource && isBufferPlaying && audioContext) {
+        bufferStartOffset += audioContext.currentTime - bufferStartTime;
+        stopBufferPlayback();
+      }
+    };
+
+    bufferSeekedHandler = () => {
+      if (isBufferSource) {
+        bufferStartOffset = Math.max(0, el.currentTime);
+        if (isBufferPlaying) {
+          isBufferSeeking = true;
+          startBufferPlayback();
+          isBufferSeeking = false;
+        }
+      }
+    };
+
+    el.addEventListener('play', bufferPlayHandler);
+    el.addEventListener('playing', bufferPlayHandler);
+    el.addEventListener('pause', bufferPauseHandler);
+    el.addEventListener('seeked', bufferSeekedHandler);
+  }
+
+  function cleanupBufferElementHooks(): void {
+    if (!mediaElement) return;
+    if (bufferPlayHandler) {
+      mediaElement.removeEventListener('play', bufferPlayHandler);
+      mediaElement.removeEventListener('playing', bufferPlayHandler);
+      bufferPlayHandler = null;
+    }
+    if (bufferPauseHandler) {
+      mediaElement.removeEventListener('pause', bufferPauseHandler);
+      bufferPauseHandler = null;
+    }
+    if (bufferSeekedHandler) {
+      mediaElement.removeEventListener('seeked', bufferSeekedHandler);
+      bufferSeekedHandler = null;
+    }
   }
 
   function applyPitchState(): void {
@@ -161,6 +295,10 @@ export function createPipeline(): ProcessingPipeline {
   }
 
   function applyPlaybackRate(speed: number): void {
+    if (isBufferSource) {
+      applyBufferPlaybackRate();
+      return;
+    }
     if (mediaElement) {
       const clampedSpeed = Math.max(0.25, Math.min(16, speed));
       try {
@@ -181,7 +319,16 @@ export function createPipeline(): ProcessingPipeline {
     connect(sourceNode: AudioNode | null, mediaEl?: HTMLMediaElement | null) {
       if (isDestroyed) return;
 
+      cleanupBufferElementHooks();
+      stopBufferPlayback();
+
       currentSource = sourceNode;
+      isBufferSource = !!(sourceNode && 'start' in sourceNode && 'buffer' in sourceNode);
+      isBufferPlaying = false;
+      bufferStartOffset = 0;
+      bufferStartTime = 0;
+      workletConnected = false;
+
       if (mediaEl) {
         mediaElement = mediaEl;
       }
@@ -195,12 +342,28 @@ export function createPipeline(): ProcessingPipeline {
         hasMediaEl: !!mediaEl,
         ctxState: audioContext?.state,
         ctxSampleRate: audioContext?.sampleRate,
+        isBufferSource,
       });
 
-      if (sourceNode) {
+      if (sourceNode && !isBufferSource) {
         initWorkletAndConnect().catch((err) => {
           console.warn('[Pipeline] initWorkletAndConnect failed:', err);
         });
+      }
+
+      if (isBufferSource && mediaEl) {
+        setupBufferElementHooks(mediaEl);
+        initWorkletAndConnect()
+          .then(() => {
+            if (mediaEl && !mediaEl.paused) {
+              console.log('[Pipeline] Element already playing — starting buffer playback');
+              bufferStartOffset = mediaEl.currentTime;
+              startBufferPlayback();
+            }
+          })
+          .catch((err) => {
+            console.warn('[Pipeline] Buffer init failed:', err);
+          });
       }
 
       sendStateUpdate();
@@ -208,6 +371,14 @@ export function createPipeline(): ProcessingPipeline {
 
     setSpeed(v: number) {
       state.speed = v;
+      console.log(
+        '[Pipeline] setSpeed:',
+        v,
+        '| workletConnected:',
+        workletConnected,
+        '| isBuffer:',
+        isBufferSource,
+      );
       applyPlaybackRate(v);
       if (workletConnected) {
         applyPitchState();
@@ -217,10 +388,20 @@ export function createPipeline(): ProcessingPipeline {
 
     setSemitone(v: number) {
       state.semitone = v;
-      if (!workletConnected && currentSource) {
+      console.log(
+        '[Pipeline] setSemitone:',
+        v,
+        '| workletConnected:',
+        workletConnected,
+        '| isBuffer:',
+        isBufferSource,
+      );
+      if (!workletConnected && currentSource && !isBufferSource) {
+        console.log('[Pipeline] Worklet not connected — trying to init');
         initWorkletAndConnect();
       }
       applyPitchState();
+      applyBufferPlaybackRate();
       sendStateUpdate();
     },
 
@@ -276,8 +457,28 @@ export function createPipeline(): ProcessingPipeline {
       return { ...state };
     },
 
+    connectSourceNode(sourceNode: AudioNode) {
+      if (isDestroyed) return;
+      currentSource = sourceNode;
+      if (sourceNode.context) {
+        audioContext = sourceNode.context as AudioContext;
+      }
+      workletConnected = false;
+      initWorkletAndConnect().catch((err) => {
+        console.warn('[Pipeline] connectSourceNode initWorkletAndConnect failed:', err);
+      });
+      sendStateUpdate();
+    },
+
+    setStrategyLevel(level: number) {
+      strategyLevel = level;
+      sendStateUpdate();
+    },
+
     destroy() {
       isDestroyed = true;
+      cleanupBufferElementHooks();
+      stopBufferPlayback();
       try {
         workletNode?.disconnect();
       } catch {
@@ -299,6 +500,7 @@ export function createPipeline(): ProcessingPipeline {
       currentSource = null;
       mediaElement = null;
       workletConnected = false;
+      isBufferSource = false;
     },
   };
 

@@ -1,97 +1,65 @@
+import { getOrCreateEarlyContext } from './context-provider';
 import type { InterceptionStrategy, InterceptionResult } from './types';
 
-export function createPreClaimStrategy(): InterceptionStrategy {
-  let preClaimedElements = new WeakSet<HTMLMediaElement>();
-  let preClaimSuccess = false;
+const PRECLAIM_TIMEOUT_MS = 5000;
 
+const preClaimedElements = new WeakSet<HTMLMediaElement>();
+const playOriginals = new WeakMap<HTMLMediaElement, () => Promise<void>>();
+
+export function createPreClaimStrategy(): InterceptionStrategy {
   return {
     level: 2,
     name: 'Pre-Claim',
 
-    async detect(el: HTMLMediaElement): Promise<InterceptionResult> {
+    detect(el: HTMLMediaElement): Promise<InterceptionResult> {
       if (preClaimedElements.has(el)) {
-        if (preClaimSuccess) {
-          const ctx = new AudioContext();
-          if (ctx.state === 'suspended') {
-            await ctx.resume();
-          }
-
-          try {
-            const sourceNode = ctx.createMediaElementSource(el);
-            return {
-              success: true,
-              strategy: 2,
-              sourceNode,
-            };
-          } catch {
-            preClaimSuccess = false;
-            return {
-              success: false,
-              strategy: 2,
-              reason: 'Pre-claim lost after initial success',
-              nextLevel: 3,
-            };
-          }
-        }
-
-        return {
+        return Promise.resolve({
           success: false,
           strategy: 2,
-          reason: 'Site claimed element before us',
+          reason: 'Already attempted pre-claim on this element',
           nextLevel: 3,
-        };
+        });
       }
 
       preClaimedElements.add(el);
 
-      const originalPlay = el.play.bind(el);
-      let playIntercepted = false;
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          el.play = originalPlay;
+          resolve({
+            success: false,
+            strategy: 2,
+            reason: 'Pre-claim timed out waiting for play()',
+            nextLevel: 3,
+          });
+        }, PRECLAIM_TIMEOUT_MS);
 
-      el.play = function (this: HTMLMediaElement): Promise<void> {
-        if (!playIntercepted) {
-          playIntercepted = true;
+        const originalPlay = el.play.bind(el);
+        playOriginals.set(el, originalPlay);
 
-          const ctx = new AudioContext();
+        el.play = function (this: HTMLMediaElement): Promise<void> {
+          clearTimeout(timeout);
+          el.play = originalPlay;
+
           try {
-            ctx.createMediaElementSource(el);
-            preClaimSuccess = true;
-            console.log('[PreClaim] Successfully claimed media element before site');
+            const ctx = getOrCreateEarlyContext();
+            if (ctx.state === 'suspended') {
+              ctx.resume().catch(() => {});
+            }
+            const sourceNode = ctx.createMediaElementSource(el);
+            resolve({ success: true, strategy: 2, sourceNode });
           } catch {
-            preClaimSuccess = false;
+            resolve({
+              success: false,
+              strategy: 2,
+              reason: 'Site claimed element before us on play()',
+              nextLevel: 3,
+            });
           }
-        }
-        return originalPlay();
-      };
 
-      if (!preClaimSuccess) {
-        return {
-          success: false,
-          strategy: 2,
-          reason: 'Awaiting play() to attempt pre-claim',
-          nextLevel: 3,
+          return originalPlay();
         };
-      }
-
-      const ctx = new AudioContext();
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-
-      try {
-        const sourceNode = ctx.createMediaElementSource(el);
-        return {
-          success: true,
-          strategy: 2,
-          sourceNode,
-        };
-      } catch {
-        return {
-          success: false,
-          strategy: 2,
-          reason: 'Pre-claim failed on retry',
-          nextLevel: 3,
-        };
-      }
+      });
     },
   };
 }

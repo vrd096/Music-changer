@@ -1,3 +1,4 @@
+import { getOrCreateEarlyContext } from './context-provider';
 import type { InterceptionStrategy, InterceptionResult } from './types';
 
 const HOOK_BLACKLIST = [
@@ -9,15 +10,21 @@ const HOOK_BLACKLIST = [
   'musiclab.chromeexperiments.com',
 ];
 
-let isInstalled = false;
-let capturedSourceNode: MediaElementAudioSourceNode | null = null;
-let isHooking = false;
+const HOOK_TIMEOUT_MS = 10000;
 
 interface Originals {
   createMediaElementSource: typeof AudioContext.prototype.createMediaElementSource;
 }
 
 const originals: Originals = {} as Originals;
+
+interface PendingResolver {
+  resolve: (result: InterceptionResult) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+const pendingResolvers = new Map<HTMLMediaElement, PendingResolver>();
+let isInstalled = false;
 
 function isBlacklisted(): boolean {
   const hostname = window.location.hostname;
@@ -38,7 +45,14 @@ function installHook(): void {
     }
 
     const result = originals.createMediaElementSource.call(this, element);
-    capturedSourceNode = result;
+
+    const entry = pendingResolvers.get(element);
+    if (entry) {
+      clearTimeout(entry.timeout);
+      pendingResolvers.delete(element);
+      entry.resolve({ success: true, strategy: 3, sourceNode: result });
+    }
+
     return result;
   };
 
@@ -53,7 +67,17 @@ function uninstallHook(): void {
   }
 
   isInstalled = false;
-  capturedSourceNode = null;
+
+  for (const [element, entry] of pendingResolvers) {
+    clearTimeout(entry.timeout);
+    entry.resolve({
+      success: false,
+      strategy: 3,
+      reason: 'Hook uninstalled',
+      nextLevel: 4,
+    });
+  }
+  pendingResolvers.clear();
 }
 
 export function createAudioContextHookStrategy(): InterceptionStrategy {
@@ -61,42 +85,51 @@ export function createAudioContextHookStrategy(): InterceptionStrategy {
     level: 3,
     name: 'AudioContext Hook',
 
-    async detect(_el: HTMLMediaElement): Promise<InterceptionResult> {
+    detect(el: HTMLMediaElement): Promise<InterceptionResult> {
       if (isBlacklisted()) {
-        return {
+        return Promise.resolve({
           success: false,
           strategy: 3,
           reason: 'Site is blacklisted for AudioContext hooking',
           nextLevel: 4,
-        };
+        });
       }
 
       if (!isInstalled) {
         installHook();
-        return {
+      }
+
+      if (!isInstalled) {
+        return Promise.resolve({
           success: false,
           strategy: 3,
-          reason: 'Hook installed — waiting for site to create AudioContext',
+          reason: 'Hook installation failed (blacklisted)',
           nextLevel: 4,
-        };
+        });
       }
 
-      if (capturedSourceNode) {
-        const node = capturedSourceNode;
-        capturedSourceNode = null;
-        return {
-          success: true,
+      if (pendingResolvers.has(el)) {
+        return Promise.resolve({
+          success: false,
           strategy: 3,
-          sourceNode: node,
-        };
+          reason: 'Already waiting for hook on this element',
+          nextLevel: 4,
+        });
       }
 
-      return {
-        success: false,
-        strategy: 3,
-        reason: 'Hook active but no source captured yet',
-        nextLevel: 4,
-      };
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          pendingResolvers.delete(el);
+          resolve({
+            success: false,
+            strategy: 3,
+            reason: 'Hook timed out waiting for AudioContext creation',
+            nextLevel: 4,
+          });
+        }, HOOK_TIMEOUT_MS);
+
+        pendingResolvers.set(el, { resolve, timeout });
+      });
     },
   };
 }

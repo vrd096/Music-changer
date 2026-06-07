@@ -1,3 +1,4 @@
+import { getOrCreateEarlyContext } from './context-provider';
 import type { InterceptionStrategy, InterceptionResult } from './types';
 
 function waitForUserGesture(): Promise<void> {
@@ -14,6 +15,8 @@ function waitForUserGesture(): Promise<void> {
   });
 }
 
+const connectedElements = new WeakSet<HTMLMediaElement>();
+
 export function createDirectStrategy(): InterceptionStrategy {
   return {
     level: 1,
@@ -21,7 +24,7 @@ export function createDirectStrategy(): InterceptionStrategy {
 
     async detect(el: HTMLMediaElement): Promise<InterceptionResult> {
       try {
-        const ctx = new AudioContext();
+        const ctx = getOrCreateEarlyContext();
         (ctx as any).__tp_owned = true;
 
         if (ctx.state === 'suspended') {
@@ -36,7 +39,17 @@ export function createDirectStrategy(): InterceptionStrategy {
           }
         }
 
+        if (connectedElements.has(el)) {
+          return {
+            success: false,
+            strategy: 1,
+            reason: 'Element already connected to our AudioContext (previous attempt)',
+            nextLevel: 2,
+          };
+        }
+
         const sourceNode = ctx.createMediaElementSource(el);
+        connectedElements.add(el);
 
         return {
           success: true,
