@@ -310,6 +310,9 @@ export function createPipeline(): ProcessingPipeline {
       applyBufferPlaybackRate();
       return;
     }
+    if (workletConnected) {
+      return;
+    }
     if (mediaElement) {
       const clampedSpeed = Math.max(0.25, Math.min(16, speed));
       try {
