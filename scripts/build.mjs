@@ -81,8 +81,8 @@ const requiredFiles = [
   '_locales/en/messages.json',
   '_locales/ru/messages.json',
   'rb.wasm',
-  'aw-tp-processor.js',
-  'aw-st-processor.js',
+  'bungee-processor.js',
+  'soundtouch-processor.js',
 ];
 
 let allFound = true;

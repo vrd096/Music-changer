@@ -39,23 +39,10 @@ export function createProcessorNode(
 
   async function setupProcessorNode(audioCtx: AudioContext): Promise<AudioWorkletNode | null> {
     try {
-      if (algo === 'st') {
-        await audioCtx.audioWorklet.addModule(scriptPath + 'aw-st-processor.js');
-        return new AudioWorkletNode(audioCtx, 'aw-st-processor', {
-          processorOptions: { key: appKey, checksum: appCheckSum },
-        });
-      } else {
-        const wasmBytes = await fetch(scriptPath + 'rb.wasm').then((response) =>
-          response.arrayBuffer(),
-        );
-        if (!wasmBytes.byteLength) throw new Error('WASM bytes empty');
-        await audioCtx.audioWorklet.addModule(scriptPath + 'aw-tp-processor.js');
-        return new AudioWorkletNode(audioCtx, 'aw-tp-processor', {
-          processorOptions: { wasmBytes, license, checksum: licenseCheckSum },
-        });
-      }
+      await audioCtx.audioWorklet.addModule(scriptPath + 'bungee-processor.js');
+      return new AudioWorkletNode(audioCtx, 'bungee-processor');
     } catch (err) {
-      runtimeLog.error('CONTENT', 'Failed to set up the transpose processor node', err);
+      runtimeLog.error('CONTENT', 'Failed to set up Bungee processor node', err);
       return null;
     }
   }
@@ -90,15 +77,16 @@ export function createProcessorNode(
     },
     setParams(params: ProcessorParams) {
       if (!input) return;
+      // Bungee uses port.postMessage for parameters
+      if (params.semitone !== undefined) {
+        input.port.postMessage({ type: 'setPitch', value: params.semitone });
+      }
       const paramMap = input.parameters;
       const setParam = (name: string, value: number | boolean | undefined) => {
         if (value === undefined) return;
         const param = paramMap.get(name);
         if (param) param.value = typeof value === 'boolean' ? (value ? 1 : 0) : value;
       };
-      setParam('pitch', params.pitch);
-      setParam('semitone', params.semitone);
-      setParam('formant', (params.formant ?? 0) + 1);
       setParam('vr_amount', params.reducerAmount);
       setParam('vr_focus', params.reducerFocus);
       setParam('vr_aggressiveness', params.reducerAggressiveness);

@@ -30,7 +30,14 @@
   "name": "__MSG_appName__",
   "optional_host_permissions": ["*://*/*"],
   "optional_permissions": ["tabCapture"],
-  "permissions": ["activeTab", "scripting", "storage", "sidePanel", "declarativeNetRequest"],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "sidePanel",
+    "declarativeNetRequest",
+    "webNavigation"
+  ],
   "declarative_net_request": {
     "rule_resources": [
       {
@@ -48,8 +55,8 @@
       "matches": ["*://*/*"],
       "resources": [
         "rb.wasm",
-        "aw-tp-processor.js",
-        "aw-st-processor.js",
+        "bungee-processor.js",
+        "soundtouch-processor.js",
         "assets/i18n/**",
         "popup/**",
         "sidepanel/**",

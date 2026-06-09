@@ -1,4 +1,5 @@
 import { getAdapter, type PlatformAdapter } from './platform-adapters';
+import { SoundTouchNode } from '@soundtouchjs/audio-worklet';
 import { DEFAULT_EQ_BANDS, type EqBand } from '../shared/types';
 import {
   isBeatport,
@@ -306,26 +307,23 @@ export function createAudioEngine(): AudioEngineAPI {
     if (mediaElement) mediaElement.loop = mode === 'loop' || mode === 'loop-one';
   }
 
+  function _setAudioParam(node: AudioWorkletNode | null, name: string, value: number): void {
+    if (!node) return;
+    const param = node.parameters.get(name);
+    if (param) param.value = value;
+  }
+
   function applyPitchState(): void {
-    if (tpWorkletNode && isTpReady) {
-      tpWorkletNode.port.postMessage({
-        type: 'set-params',
-        semitone: state.semitone || 0,
-        pitch: state.pitch || 0,
-        formant: state.formant || 0,
-        speed: state.speed,
-        enabled:
-          state.semitone !== 0 || state.pitch !== 0 || state.formant !== 0 || state.speed !== 1,
-      });
-    }
-    if (stWorkletNode && isStReady) {
-      stWorkletNode.port.postMessage({
-        type: 'set-params',
-        semitone: state.semitone || 0,
-        pitch: state.pitch || 0,
-        speed: state.speed || 1,
-        enabled: state.semitone !== 0 || state.pitch !== 0 || state.speed !== 1,
-      });
+    const semitone = state.semitone || 0;
+    const speed = state.speed || 1;
+
+    if (tpWorkletNode) {
+      const stNode = tpWorkletNode as SoundTouchNode;
+      stNode.pitchSemitones.value = semitone;
+      stNode.playbackRate.value = speed;
+      console.log('[AudioEngine] SoundTouchJS pitch:', semitone, 'rate:', speed);
+    } else if (semitone !== 0) {
+      console.log('[AudioEngine] Varispeed pitch:', semitone);
     }
   }
 
@@ -414,17 +412,64 @@ export function createAudioEngine(): AudioEngineAPI {
     return workletInitPromise;
   }
 
+  function _rerouteBeatportIfNeeded(): void {
+    if (!isBeatport || !_isBufferPlaying || !_beatportAudioBuffer) return;
+    const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
+    if (!ctx) return;
+    const worklet = tpWorkletNode || stWorkletNode;
+    if (!worklet) return;
+    console.log('[AudioEngine] Rerouting Beatport BufferSource through worklet');
+
+    // Stop current direct-to-destination playback
+    if (bufferSource) {
+      bufferSource.onended = null;
+      try {
+        bufferSource.stop();
+        bufferSource.disconnect();
+      } catch {}
+      bufferSource = null;
+    }
+
+    // Create new BufferSource connected through worklet
+    const newSrc = ctx.createBufferSource();
+    newSrc.buffer = _beatportAudioBuffer;
+    newSrc.playbackRate.value = _getBeatportPlaybackRate();
+    newSrc.connect(worklet);
+    const elapsed = ctx.currentTime - _beatportStartTime;
+    const newOff = Math.max(0, _beatportStartOffset + elapsed);
+    newSrc.start(0, newOff >= (_beatportAudioBuffer?.duration ?? 0) ? 0 : newOff);
+    bufferSource = newSrc;
+    _isBufferPlaying = true;
+    _beatportStartTime = ctx.currentTime;
+    _beatportStartOffset = newOff;
+    newSrc.onended = () => {
+      if (!_isBeatportSeeking) {
+        _isBufferPlaying = false;
+        bufferSource = null;
+      }
+    };
+    applyPitchState();
+  }
+
   async function _initAudioWorklet(): Promise<void> {
-    if (!mediaElement) return;
+    if (!mediaElement && !isBeatport) {
+      workletInitPromise = null;
+      return;
+    }
     try {
-      const rgu =
-        typeof chrome !== 'undefined' && chrome.runtime?.getURL
-          ? chrome.runtime.getURL.bind(chrome.runtime)
-          : null;
-      if (!rgu) {
-        console.warn('[Content] chrome.runtime.getURL not available');
+      // Try chrome.runtime.getURL first, fallback to DOM attribute from dispatcher
+      const extOrigin: string =
+        (typeof chrome !== 'undefined' && chrome.runtime?.getURL
+          ? chrome.runtime.getURL('')
+          : '') ||
+        document.documentElement.dataset.tpExtensionOrigin ||
+        '';
+      if (!extOrigin) {
+        console.warn('[Content] Extension origin not available');
+        workletInitPromise = null;
         return;
       }
+      const rgu = (path: string) => extOrigin + path;
       if (!audioContext) {
         const ec = (window as any).___tp_earlyContext;
         audioContext = ec || new AudioContext();
@@ -432,52 +477,66 @@ export function createAudioEngine(): AudioEngineAPI {
       }
       if (audioContext?.state === 'suspended') await audioContext.resume();
       const ctx = audioContext;
-      if (!ctx) return;
+      if (!ctx) {
+        workletInitPromise = null;
+        return;
+      }
       if (!gainNode) {
         gainNode = ctx.createGain();
         gainNode.gain.value = 1;
         gainNode.connect(ctx.destination);
       }
-      if (!sourceNode) sourceNode = ctx.createMediaElementSource(mediaElement);
+      if (!sourceNode && !isBeatport) {
+        try {
+          sourceNode = ctx.createMediaElementSource(mediaElement!);
+        } catch (e) {
+          // Media element already connected to another AudioContext (e.g. SoundCloud)
+          console.warn(
+            '[AudioEngine] createMediaElementSource failed — falling back to playbackRate only:',
+            (e as Error).message,
+          );
+          isTpReady = true;
+          isStReady = true;
+          workletInitPromise = null;
+          return;
+        }
+      }
+      // SoundTouchJS AudioWorklet (MPL-2.0 license)
       if (!isTpReady) {
         try {
-          await ctx.audioWorklet.addModule(rgu('aw-tp-processor.js'));
-          tpWorkletNode = new AudioWorkletNode(ctx, 'aw-tp-processor', {
-            processorOptions: { wasmUrl: rgu('rb.wasm') },
-          });
-          tpWorkletNode.port.onmessage = (event) => {
-            if (event.data?.type === 'ready') {
-              isTpReady = true;
-              applyPitchState();
-            }
-          };
-          sourceNode.disconnect();
-          sourceNode.connect(tpWorkletNode);
-          tpWorkletNode.connect(gainNode!);
-        } catch (err) {
-          console.warn('[Content] TP worklet not available:', err);
-        }
-      }
-      if (!isStReady) {
-        try {
-          await ctx.audioWorklet.addModule(rgu('aw-st-processor.js'));
-          stWorkletNode = new AudioWorkletNode(ctx, 'aw-st-processor', { processorOptions: {} });
-          stWorkletNode.port.onmessage = (event) => {
-            if (event.data?.type === 'ready') {
-              isStReady = true;
-              applyPitchState();
-            }
-          };
-          if (!tpWorkletNode) {
-            sourceNode!.disconnect();
-            sourceNode!.connect(stWorkletNode);
-            stWorkletNode.connect(gainNode!);
+          await SoundTouchNode.register(ctx, rgu('soundtouch-processor.js'));
+          console.log('[AudioEngine] soundtouch-processor.js registered');
+
+          tpWorkletNode = new SoundTouchNode({ context: ctx });
+
+          // Connect audio graph
+          if (sourceNode) {
+            sourceNode.disconnect();
+            sourceNode.connect(tpWorkletNode);
+            tpWorkletNode.connect(gainNode!);
+            console.log('[AudioEngine] SoundTouchJS: sourceNode → processor → gainNode');
+          } else if (isBeatport) {
+            tpWorkletNode.connect(gainNode!);
+            console.log('[AudioEngine] SoundTouchJS: Beatport mode → gainNode');
+          } else {
+            tpWorkletNode.connect(gainNode!);
+            console.log('[AudioEngine] SoundTouchJS: → gainNode');
           }
+
+          isTpReady = true;
+          isStReady = true;
+          stWorkletNode = tpWorkletNode;
+          console.log('[AudioEngine] SoundTouchJS processor ready');
+          applyPitchState();
+          _rerouteBeatportIfNeeded();
         } catch (err) {
-          console.warn('[Content] ST worklet not available:', err);
+          console.warn('[Content] SoundTouchJS setup failed, falling back to varispeed:', err);
+          isTpReady = true;
+          isStReady = true;
+          workletInitPromise = null;
         }
       }
-      _ensureEqChain();
+      if (!isBeatport && sourceNode) _ensureEqChain();
       applyPitchState();
     } catch (err) {
       logError('Content', 'AudioWorklet init failed', err);
@@ -489,6 +548,11 @@ export function createAudioEngine(): AudioEngineAPI {
     if (mediaElement === element) return;
     mediaElement = element;
     skipAudioWorklet = skp;
+    // Prevent browser from auto-compensating pitch on playbackRate change
+    // (conflicts with SoundTouchJS Master Tempo)
+    try {
+      element.preservesPitch = false;
+    } catch {}
     if (!skp) {
       applyPlaybackRate(state.speed);
       applyLoopMode(state.loopMode);
@@ -515,7 +579,7 @@ export function createAudioEngine(): AudioEngineAPI {
     applyPitchState();
     sendStateUpdate();
     if (isBeatport && bufferSource && _isBufferPlaying) {
-      bufferSource.playbackRate.value = Math.max(0.25, Math.min(16, speed));
+      _updateBeatportPlaybackRate();
     }
     if (isBeatport && mediaElement) {
       [100, 300, 800, 2000].forEach((d) =>
@@ -528,10 +592,56 @@ export function createAudioEngine(): AudioEngineAPI {
       );
     }
   }
+  function _getBeatportPlaybackRate(): number {
+    // If SoundTouchJS is active, pitch is handled by the worklet — only apply speed
+    if (tpWorkletNode) {
+      return Math.max(0.25, Math.min(16, state.speed || 1));
+    }
+    // Fallback: varispeed = speed × pitch ratio
+    const pitchRatio = Math.pow(2, (state.semitone || 0) / 12);
+    return Math.max(0.25, Math.min(16, (state.speed || 1) * pitchRatio));
+  }
+
+  function _updateBeatportPlaybackRate(): void {
+    const rate = _getBeatportPlaybackRate();
+    console.log(
+      '[AudioEngine] _updateBeatportPlaybackRate: isBeatport=',
+      isBeatport,
+      'hasBuffer=',
+      !!bufferSource,
+      'isPlaying=',
+      _isBufferPlaying,
+      'rate=',
+      rate,
+      'semitone=',
+      state.semitone,
+      'speed=',
+      state.speed,
+    );
+    if (isBeatport && bufferSource && _isBufferPlaying) {
+      bufferSource.playbackRate.value = rate;
+    }
+  }
+
   function setSemitone(semitone: number): void {
+    console.log(
+      '[AudioEngine] setSemitone:',
+      semitone,
+      'isBeatport:',
+      isBeatport,
+      'hasWorklet:',
+      !!(tpWorkletNode || stWorkletNode),
+      'tpReady:',
+      isTpReady,
+      'stReady:',
+      isStReady,
+    );
     state.semitone = semitone;
-    if (semitone !== 0) initAudioWorklet();
-    applyPitchState();
+    if (isBeatport) {
+      initAudioWorklet();
+      applyPitchState();
+      _updateBeatportPlaybackRate();
+    }
     sendStateUpdate();
   }
   function setPitch(pitch: number): void {
@@ -603,8 +713,22 @@ export function createAudioEngine(): AudioEngineAPI {
     stopBeatportPlayback();
     const src = ctx.createBufferSource();
     src.buffer = _beatportAudioBuffer;
-    src.playbackRate.value = Math.max(0.25, Math.min(16, state.speed || 1));
-    src.connect(ctx.destination);
+    src.playbackRate.value = _getBeatportPlaybackRate();
+
+    // Route through SoundTouchJS worklet if available, otherwise direct
+    const worklet = tpWorkletNode || stWorkletNode;
+    if (worklet) {
+      src.connect(worklet);
+      console.log(
+        '[AudioEngine] Beatport BufferSource → worklet (channels:',
+        _beatportAudioBuffer.numberOfChannels,
+        ')',
+      );
+    } else {
+      src.connect(ctx.destination);
+      console.log('[AudioEngine] Beatport BufferSource → destination (no worklet)');
+    }
+
     _beatportStartTime = ctx.currentTime;
     const off = Math.max(0, _beatportStartOffset);
     src.start(0, off >= _beatportAudioBuffer.duration ? 0 : off);
@@ -620,7 +744,17 @@ export function createAudioEngine(): AudioEngineAPI {
 
   function prepareBeatportAudio(url: string): void {
     if (_lastKnownSrc === url && _beatportAudioBuffer) {
-      startBeatportPlayback();
+      // Ensure worklet is initialized before playback
+      const nw =
+        state.semitone !== 0 || state.pitch !== 0 || state.formant !== 0 || state.speed !== 1;
+      if (nw) {
+        initAudioWorklet().then(() => {
+          console.log('[AudioEngine] Beatport: worklet ready, starting cached playback');
+          startBeatportPlayback();
+        });
+      } else {
+        startBeatportPlayback();
+      }
       return;
     }
     if (_lastKnownSrc !== url) {
@@ -633,6 +767,12 @@ export function createAudioEngine(): AudioEngineAPI {
     const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
     if (!ctx) return;
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+
+    // Start worklet init early (in parallel with fetch)
+    const nw =
+      state.semitone !== 0 || state.pitch !== 0 || state.formant !== 0 || state.speed !== 1;
+    const workletPromise = nw ? initAudioWorklet() : Promise.resolve();
+
     fetch(url)
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -641,6 +781,10 @@ export function createAudioEngine(): AudioEngineAPI {
       .then((arrayBuffer) => ctx.decodeAudioData(arrayBuffer))
       .then((audioBuffer) => {
         _beatportAudioBuffer = audioBuffer;
+        return workletPromise;
+      })
+      .then(() => {
+        console.log('[AudioEngine] Beatport: fetch + worklet done, starting playback');
         startBeatportPlayback();
       })
       .catch((err) => {
