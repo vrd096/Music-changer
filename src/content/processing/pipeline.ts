@@ -288,29 +288,19 @@ export function createPipeline(): ProcessingPipeline {
     if (!workletNode) return;
 
     const semitone = state.semitone || 0;
-    const speed = state.speed || 1;
 
     const stNode = workletNode as any;
     if (stNode.pitchSemitones) {
       stNode.pitchSemitones.value = semitone;
     }
-    if (stNode.playbackRate) {
-      stNode.playbackRate.value = speed;
-    }
 
     const pitchParam = workletNode.parameters.get('pitchSemitones');
     if (pitchParam) pitchParam.value = semitone;
-
-    const rateParam = workletNode.parameters.get('playbackRate');
-    if (rateParam) rateParam.value = speed;
   }
 
   function applyPlaybackRate(speed: number): void {
     if (isBufferSource) {
       applyBufferPlaybackRate();
-      return;
-    }
-    if (workletConnected) {
       return;
     }
     if (mediaElement) {

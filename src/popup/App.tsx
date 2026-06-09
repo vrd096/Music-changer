@@ -93,24 +93,45 @@ export const PopupApp: React.FC = () => {
   const sendCommand = useCallback(async (data: Record<string, unknown>, retryCount = 0) => {
     const tabId = activeTabIdRef.current;
     if (!tabId) return;
+    const msg = { sender: 'controls', tabId, ...data };
+
     try {
-      await chrome.tabs.sendMessage(tabId, { sender: 'controls', tabId, ...data });
-    } catch (err) {
-      if (permissionJustGrantedRef.current && retryCount < 3) {
-        setTimeout(() => sendCommand(data, retryCount + 1), 1000);
-        return;
-      }
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.url) {
-        const urlObj = new URL(tab.url);
-        const pattern = `${urlObj.protocol}//${urlObj.hostname}/*`;
-        const hasPerms = await chrome.permissions.contains({ origins: [pattern] });
-        if (!hasPerms) {
-          setPendingHostUrl(tab.url);
-          setConnectionStatus('no-permission');
-        } else if (retryCount < 3) {
-          setTimeout(() => sendCommand(data, retryCount + 1), 800);
+      await chrome.tabs.sendMessage(tabId, msg);
+      return;
+    } catch {
+      // main frame failed, try all frames
+    }
+
+    try {
+      const frames = await chrome.webNavigation.getAllFrames({ tabId });
+      if (!frames) return;
+      for (const frame of frames) {
+        if (frame.frameId === 0) continue;
+        try {
+          await chrome.tabs.sendMessage(tabId, msg, { frameId: frame.frameId });
+          return;
+        } catch {
+          // try next frame
         }
+      }
+    } catch {
+      // webNavigation may not be available
+    }
+
+    if (permissionJustGrantedRef.current && retryCount < 3) {
+      setTimeout(() => sendCommand(data, retryCount + 1), 1000);
+      return;
+    }
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.url) {
+      const urlObj = new URL(tab.url);
+      const pattern = `${urlObj.protocol}//${urlObj.hostname}/*`;
+      const hasPerms = await chrome.permissions.contains({ origins: [pattern] });
+      if (!hasPerms) {
+        setPendingHostUrl(tab.url);
+        setConnectionStatus('no-permission');
+      } else if (retryCount < 3) {
+        setTimeout(() => sendCommand(data, retryCount + 1), 800);
       }
     }
   }, []);

@@ -18,6 +18,7 @@ let pipelineActive = false;
 let currentStrategyLevel = 0;
 let activeMediaElement: HTMLMediaElement | null = null;
 let lastConnectedSrc = '';
+const handledElements = new WeakSet<HTMLMediaElement>();
 
 function isDirectHttpAudio(el: HTMLMediaElement): boolean {
   if (el instanceof HTMLVideoElement) return false;
@@ -72,6 +73,7 @@ function applyFallback(el: HTMLMediaElement): void {
   pipelineActive = true;
   currentStrategyLevel = 5;
   lastConnectedSrc = el.src || el.currentSrc || '';
+  handledElements.add(el);
 
   const src = el.src || el.currentSrc || '';
   if (src.startsWith('http://') || src.startsWith('https://')) {
@@ -98,6 +100,11 @@ async function tryCascadeStrategies(
   el: HTMLMediaElement,
   strategies: InterceptionStrategy[],
 ): Promise<void> {
+  if (handledElements.has(el) && pipelineActive && el !== activeMediaElement) {
+    console.log('[Content] Element already handled, skipping cascade');
+    return;
+  }
+
   if (pipelineActive && el === activeMediaElement) {
     const currentSrc = el.src || el.currentSrc || '';
     if (currentSrc && currentSrc !== lastConnectedSrc) {
@@ -151,6 +158,7 @@ async function tryCascadeStrategies(
         currentStrategyLevel = strategy.level;
         activeMediaElement = el;
         lastConnectedSrc = el.src || el.currentSrc || '';
+        handledElements.add(el);
         return;
       }
     } catch (err) {
