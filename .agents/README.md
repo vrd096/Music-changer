@@ -24,6 +24,39 @@
 5. **Accessibility**: семантика, ARIA, фокус-менеджмент
 6. **DRY + KISS**: не повторяться, но и не усложнять
 
+## Структурная карта проекта (актуальна на 2026-06-09)
+
+### Архитектурные слои
+
+| Слой                        | Директория                       | Роль                                                                                                                  |
+| --------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Background (Service Worker) | `src/background/`                | Жизненный цикл расширения, регистрация content scripts, маршрутизация сообщений, UI-режим (popup/sidepanel), badge    |
+| Content Scripts             | `src/content/`                   | Перехват аудио на странице, каскад стратегий, аудио-пайплайн (SoundTouchJS + EQ)                                      |
+| Content: Interception       | `src/content/interception/`      | 6 стратегий перехвата аудио: Direct → PreClaim → AudioContextHook → BufferFetch → Fallback (+ TabCapture)             |
+| Content: Processing         | `src/content/processing/`        | Универсальный пайплайн: WorkletLoader (SoundTouchJS), Pipeline (граф нод + EQ)                                        |
+| Content: Platform Adapters  | `src/content/platform-adapters/` | Адаптеры поиска `<video>/<audio>` для YouTube, SoundCloud, Beatport, JunoDownload, Default                            |
+| UI (Popup)                  | `src/popup/`                     | React-интерфейс всплывающего окна: карточки тональности, скорости, EQ, BPM/Key                                        |
+| UI (SidePanel)              | `src/sidepanel/`                 | React-интерфейс боковой панели (переиспользует компоненты popup)                                                      |
+| TabCapture                  | `src/tabcapture/`                | Отдельная вкладка для захвата аудио через `chrome.tabCapture` API                                                     |
+| Shared                      | `src/shared/`                    | Типы (`types.ts`), хелперы (`helpers.ts`), хранилище (`storage.ts`), i18n (`i18n.ts`), логгер, хуки, общие компоненты |
+
+### Ключевые инварианты
+
+- **Два content-script мира**: `content.ts` (MAIN world, доступ к `window`) и `content-dispatcher.ts` (ISOLATED world, проброс сообщений через DOM CustomEvents)
+- **Каскад стратегий**: при обнаружении медиа-элемента стратегии пробуются последовательно до первого успеха; порядок зависит от типа элемента (`<audio>` с HTTP-URL vs `<video>`/MSE)
+- **early AudioContext**: создаётся до загрузки страницы для опережения сайта в гонке за `createMediaElementSource`
+- **Два аудиодвижка**: универсальный `Pipeline` (для всех сайтов) и legacy `AudioEngine` (только Beatport)
+- **SoundTouchJS**: `@soundtouchjs/audio-worklet` для pitch-shifting через Web Audio Worklet
+- **CORS Beatport**: `declarativeNetRequest` правило (`rules.json`) подменяет `Access-Control-Allow-Origin: *` для `geo-samples.beatport.com`
+- **Коммуникация**: Popup/SidePanel → Service Worker → Content Script (через `chrome.tabs.sendMessage` + `chrome.runtime.sendMessage`)
+
+### Соглашения об именовании файлов
+
+- `strategy-*.ts` — стратегии перехвата в `src/content/interception/`
+- `*.tsx` — React-компоненты
+- `types.ts` — типы модуля
+- `index.ts` — точка входа/фабрика модуля
+
 ## Роль AI-агента
 
 - Действовать как Senior Frontend Engineer
