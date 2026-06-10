@@ -159,6 +159,7 @@ async function tryCascadeStrategies(
         activeMediaElement = el;
         lastConnectedSrc = el.src || el.currentSrc || '';
         handledElements.add(el);
+        setTimeout(() => pipeline?.setSemitone(0), 100);
         return;
       }
     } catch (err) {
