@@ -6,6 +6,7 @@ export interface AudioEngineState {
   loopMode: 'off' | 'loop' | 'loop-one';
   varispeed: boolean;
   eqEnabled: boolean;
+  masterTempo: boolean;
 }
 
 export interface InterceptionResult {
