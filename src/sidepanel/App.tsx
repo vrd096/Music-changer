@@ -161,6 +161,14 @@ export const SidePanelApp: React.FC = () => {
                 !url.includes('vkvideo.ru'),
             );
           }
+          chrome.storage.local.get(['popupSpeed', 'popupSemitone', 'popupMasterTempo'], (data) => {
+            if (data.popupSpeed !== undefined) {
+              setSpeed(data.popupSpeed);
+              setBpm(Math.round(data.popupSpeed * 128));
+            }
+            if (data.popupSemitone !== undefined) setSemitone(data.popupSemitone);
+            if (data.popupMasterTempo !== undefined) setMasterTempo(data.popupMasterTempo);
+          });
         }
       }
     };
@@ -174,27 +182,37 @@ export const SidePanelApp: React.FC = () => {
     };
   }, [getActiveTabId]);
 
+  const saveState = useCallback((s: number, sm: number, mt: boolean) => {
+    chrome.storage.local
+      .set({ popupSpeed: s, popupSemitone: sm, popupMasterTempo: mt })
+      .catch(() => {});
+  }, []);
+
   const handleSemitoneChange = useCallback(
     (v: number) => {
       setSemitone(v);
+      saveState(speed, v, masterTempo);
       sendCommand({ semitone: v });
     },
-    [sendCommand],
+    [sendCommand, speed, masterTempo, saveState],
   );
   const handleBpmChange = useCallback(
     (v: number) => {
       setBpm(v);
-      setSpeed(1);
-      sendCommand({ speed: v / 128 });
+      const newSpeed = v / 128;
+      setSpeed(newSpeed);
+      saveState(newSpeed, semitone, masterTempo);
+      sendCommand({ speed: newSpeed });
     },
-    [sendCommand],
+    [sendCommand, semitone, masterTempo, saveState],
   );
   const handleSpeedChange = useCallback(
     (v: number) => {
       setSpeed(v);
+      saveState(v, semitone, masterTempo);
       sendCommand({ speed: v });
     },
-    [sendCommand],
+    [sendCommand, semitone, masterTempo, saveState],
   );
   const handleEqToggle = useCallback(
     (c: boolean) => {
@@ -206,10 +224,11 @@ export const SidePanelApp: React.FC = () => {
   const handleMasterTempoToggle = useCallback(() => {
     setMasterTempo((prev) => {
       const next = !prev;
+      saveState(speed, semitone, next);
       sendCommand({ masterTempo: next });
       return next;
     });
-  }, [sendCommand]);
+  }, [sendCommand, speed, semitone, saveState]);
   const handleEqBandChange = useCallback(
     (i: number, g: number) => {
       setEqBands((p) => {
