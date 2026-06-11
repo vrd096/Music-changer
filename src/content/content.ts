@@ -159,6 +159,7 @@ async function tryCascadeStrategies(
         activeMediaElement = el;
         lastConnectedSrc = el.src || el.currentSrc || '';
         handledElements.add(el);
+        setTimeout(() => pipeline?.setSemitone(0), 100);
         return;
       }
     } catch (err) {
@@ -220,6 +221,7 @@ document.addEventListener('transpose-dispatch-controls-to-content', ((event: Cus
   if (params.loopMode !== undefined) pipeline.setLoopMode(params.loopMode);
   if (params.varispeed !== undefined) pipeline.setVarispeed(params.varispeed);
   if (params.eqEnabled !== undefined) pipeline.setEqEnabled(params.eqEnabled);
+  if (params.masterTempo !== undefined) pipeline.setMasterTempo(params.masterTempo);
   if (params.eqBand !== undefined) {
     const { index, gain } = params.eqBand as { index: number; gain: number };
     pipeline.setEqBand(index, gain);

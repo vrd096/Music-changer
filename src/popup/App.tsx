@@ -42,10 +42,12 @@ export const PopupApp: React.FC = () => {
   const [mediaType, setMediaType] = useState<'audio' | 'video'>('audio');
   const [eqEnabled, setEqEnabled] = useState(false);
   const [eqBands, setEqBands] = useState<EqBand[]>(DEFAULT_EQ_BANDS.map((b) => ({ ...b })));
+  const [masterTempo, setMasterTempo] = useState(false);
 
   const [detectedBpm, setDetectedBpm] = useState<number | null>(null);
   const [detectedKey, setDetectedKey] = useState<string | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
+  const [showMT, setShowMT] = useState(true);
 
   const [uiMode, setUiMode] = useState<string>('popup');
   const [visibleComponents, setVisibleComponents] = useState<Record<string, boolean>>({
@@ -189,6 +191,14 @@ export const PopupApp: React.FC = () => {
                 ? 'video'
                 : 'audio',
             );
+            setShowMT(
+              !url.includes('spotify.com') &&
+                !url.includes('beatport.com') &&
+                !url.includes('youtube.com') &&
+                !url.includes('youtu.be') &&
+                !url.includes('vk.com') &&
+                !url.includes('vkvideo.ru'),
+            );
           }
         }
       }
@@ -232,6 +242,13 @@ export const PopupApp: React.FC = () => {
     },
     [sendCommand],
   );
+  const handleMasterTempoToggle = useCallback(() => {
+    setMasterTempo((prev) => {
+      const next = !prev;
+      sendCommand({ masterTempo: next });
+      return next;
+    });
+  }, [sendCommand]);
   const handleEqBandChange = useCallback(
     (i: number, g: number) => {
       setEqBands((p) => {
@@ -349,8 +366,11 @@ export const PopupApp: React.FC = () => {
               mediaType={mediaType}
               bpm={bpm}
               speed={speed}
+              masterTempo={masterTempo}
+              showMT={showMT}
               onBpmChange={handleBpmChange}
               onSpeedChange={handleSpeedChange}
+              onMasterTempoToggle={handleMasterTempoToggle}
             />
           )}
           {visibleComponents.eq && (

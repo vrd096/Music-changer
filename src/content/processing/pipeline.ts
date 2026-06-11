@@ -13,6 +13,7 @@ export interface ProcessingPipeline {
   setVarispeed(v: boolean): void;
   setEqEnabled(v: boolean): void;
   setEqBand(index: number, gain: number): void;
+  setMasterTempo(v: boolean): void;
   getState(): AudioEngineState;
   setStrategyLevel(level: number): void;
   destroy(): void;
@@ -26,6 +27,7 @@ const DEFAULT_STATE: AudioEngineState = {
   loopMode: 'off',
   varispeed: false,
   eqEnabled: false,
+  masterTempo: false,
 };
 
 export function createPipeline(): ProcessingPipeline {
@@ -65,6 +67,7 @@ export function createPipeline(): ProcessingPipeline {
         loopMode: state.loopMode,
         varispeed: state.varispeed,
         eqEnabled: state.eqEnabled,
+        masterTempo: state.masterTempo,
         eqBands,
         strategyLevel,
       });
@@ -110,6 +113,7 @@ export function createPipeline(): ProcessingPipeline {
     }
 
     workletNode = node;
+    console.log('[Pipeline] initWorkletAndConnect: worklet node obtained, connecting graph');
 
     try {
       workletNode.disconnect();
@@ -158,10 +162,14 @@ export function createPipeline(): ProcessingPipeline {
 
     gainNode.connect(ctx.destination);
     workletConnected = true;
+    console.log(
+      '[Pipeline] initWorkletAndConnect: graph connected — source→worklet→eq→gain→destination',
+    );
 
     applyPitchState();
     applyEqState();
     applyBufferPlaybackRate();
+    console.log('[Pipeline] initWorkletAndConnect: pitch/eq/buffer state applied');
   }
 
   function getBufferPlaybackRate(): number {
@@ -284,10 +292,17 @@ export function createPipeline(): ProcessingPipeline {
     }
   }
 
+  function getEffectiveSemitone(): number {
+    if (!state.masterTempo) return state.semitone || 0;
+    const speed = state.speed || 1;
+    const compensation = -12 * Math.log2(Math.max(0.25, Math.min(16, speed)));
+    return (state.semitone || 0) + compensation;
+  }
+
   function applyPitchState(): void {
     if (!workletNode) return;
 
-    const semitone = state.semitone || 0;
+    const semitone = getEffectiveSemitone();
 
     const stNode = workletNode as any;
     if (stNode.pitchSemitones) {
@@ -307,8 +322,8 @@ export function createPipeline(): ProcessingPipeline {
       const clampedSpeed = Math.max(0.25, Math.min(16, speed));
       try {
         mediaElement.playbackRate = clampedSpeed;
-      } catch {
-        // ignore
+      } catch (err) {
+        console.warn('[Pipeline] applyPlaybackRate FAILED:', err);
       }
     }
   }
@@ -436,6 +451,17 @@ export function createPipeline(): ProcessingPipeline {
     setVarispeed(v: boolean) {
       state.varispeed = v;
       applyPlaybackRate(state.speed);
+      sendStateUpdate();
+    },
+
+    setMasterTempo(v: boolean) {
+      state.masterTempo = v;
+      if (v && !workletConnected && currentSource) {
+        initWorkletAndConnect();
+      }
+      if (workletConnected) {
+        applyPitchState();
+      }
       sendStateUpdate();
     },
 

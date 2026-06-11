@@ -4,8 +4,11 @@ interface SpeedCardProps {
   mediaType: 'audio' | 'video';
   bpm: number;
   speed: number;
+  masterTempo: boolean;
+  showMT: boolean;
   onBpmChange: (bpm: number) => void;
   onSpeedChange: (speed: number) => void;
+  onMasterTempoToggle: () => void;
 }
 
 const BASE_BPM = 128;
@@ -18,8 +21,11 @@ export const SpeedCard: React.FC<SpeedCardProps> = ({
   mediaType,
   bpm,
   speed,
+  masterTempo,
+  showMT,
   onBpmChange,
   onSpeedChange,
+  onMasterTempoToggle,
 }) => {
   const isAudio = mediaType === 'audio';
 
@@ -92,29 +98,43 @@ export const SpeedCard: React.FC<SpeedCardProps> = ({
           style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
           Скорость
         </span>
-        <span
-          className="font-bold tracking-tight"
-          style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
-          {isAudio ? (
-            <>
-              {bpm}{' '}
-              <span
-                className="font-medium"
-                style={{ fontSize: '10px', color: 'var(--accent-secondary)' }}>
-                BPM
-              </span>
-            </>
-          ) : (
-            <>
-              {speed.toFixed(2)}
-              <span
-                className="font-normal"
-                style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-                x
-              </span>
-            </>
+        <div className="flex items-center gap-2">
+          <span
+            className="font-bold tracking-tight"
+            style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
+            {isAudio ? (
+              <>
+                {bpm}{' '}
+                <span
+                  className="font-medium"
+                  style={{ fontSize: '10px', color: 'var(--accent-secondary)' }}>
+                  BPM
+                </span>
+              </>
+            ) : (
+              <>
+                {speed.toFixed(2)}
+                <span
+                  className="font-normal"
+                  style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                  x
+                </span>
+              </>
+            )}
+          </span>
+          {showMT && (
+            <button
+              onClick={onMasterTempoToggle}
+              className="w-[32px] h-[24px] rounded text-[10px] font-bold cursor-pointer transition-colors border-0 flex items-center justify-center"
+              style={{
+                background: masterTempo ? 'var(--accent-primary)' : 'var(--border)',
+                color: masterTempo ? '#fff' : 'var(--text-primary)',
+              }}
+              title="Master Tempo (Key Lock)">
+              MT
+            </button>
           )}
-        </span>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 mb-1">

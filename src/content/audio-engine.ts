@@ -319,11 +319,29 @@ export function createAudioEngine(): AudioEngineAPI {
 
     if (tpWorkletNode) {
       const stNode = tpWorkletNode as SoundTouchNode;
+      const prevPitch = stNode.pitchSemitones.value;
+      const prevRate = stNode.playbackRate.value;
       stNode.pitchSemitones.value = semitone;
       stNode.playbackRate.value = speed;
-      console.log('[AudioEngine] SoundTouchJS pitch:', semitone, 'rate:', speed);
+      console.log(
+        '[AudioEngine] applyPitchState:',
+        'pitch',
+        prevPitch,
+        '→',
+        semitone,
+        '| rate',
+        prevRate,
+        '→',
+        speed,
+        '| userSemitone:',
+        state.semitone,
+        '| userSpeed:',
+        state.speed,
+      );
     } else if (semitone !== 0) {
-      console.log('[AudioEngine] Varispeed pitch:', semitone);
+      console.log('[AudioEngine] Varispeed pitch:', semitone, '(no worklet)');
+    } else {
+      console.log('[AudioEngine] applyPitchState: no worklet, semitone=0 — SKIPPED');
     }
   }
 
@@ -435,6 +453,7 @@ export function createAudioEngine(): AudioEngineAPI {
     newSrc.buffer = _beatportAudioBuffer;
     newSrc.playbackRate.value = _getBeatportPlaybackRate();
     newSrc.connect(worklet);
+    applyPitchState();
     const elapsed = ctx.currentTime - _beatportStartTime;
     const newOff = Math.max(0, _beatportStartOffset + elapsed);
     newSrc.start(0, newOff >= (_beatportAudioBuffer?.duration ?? 0) ? 0 : newOff);
@@ -448,7 +467,6 @@ export function createAudioEngine(): AudioEngineAPI {
         bufferSource = null;
       }
     };
-    applyPitchState();
   }
 
   async function _initAudioWorklet(): Promise<void> {
@@ -575,7 +593,11 @@ export function createAudioEngine(): AudioEngineAPI {
       typeof chrome !== 'undefined' && chrome.runtime?.getURL
         ? chrome.runtime.getURL.bind(chrome.runtime)
         : null;
-    if (speed !== 1 && !skipAudioWorklet && rgu) initAudioWorklet();
+    if (isBeatport) {
+      initAudioWorklet();
+    } else if (speed !== 1 && !skipAudioWorklet && rgu) {
+      initAudioWorklet();
+    }
     applyPitchState();
     sendStateUpdate();
     if (isBeatport && bufferSource && _isBufferPlaying) {
@@ -593,13 +615,22 @@ export function createAudioEngine(): AudioEngineAPI {
     }
   }
   function _getBeatportPlaybackRate(): number {
-    // If SoundTouchJS is active, pitch is handled by the worklet — only apply speed
-    if (tpWorkletNode) {
-      return Math.max(0.25, Math.min(16, state.speed || 1));
+    const hasWorklet = !!tpWorkletNode;
+    if (hasWorklet) {
+      const rate = Math.max(0.25, Math.min(16, state.speed || 1));
+      console.log('[AudioEngine] _getBeatportPlaybackRate: worklet=YES →', rate);
+      return rate;
     }
-    // Fallback: varispeed = speed × pitch ratio
     const pitchRatio = Math.pow(2, (state.semitone || 0) / 12);
-    return Math.max(0.25, Math.min(16, (state.speed || 1) * pitchRatio));
+    const rate = Math.max(0.25, Math.min(16, (state.speed || 1) * pitchRatio));
+    console.log(
+      '[AudioEngine] _getBeatportPlaybackRate: worklet=NO →',
+      rate,
+      '(pitchRatio:',
+      pitchRatio.toFixed(4),
+      ')',
+    );
+    return rate;
   }
 
   function _updateBeatportPlaybackRate(): void {
@@ -711,6 +742,12 @@ export function createAudioEngine(): AudioEngineAPI {
     const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
     if (!ctx || !_beatportAudioBuffer) return;
     stopBeatportPlayback();
+    console.log(
+      '[AudioEngine] startBeatportPlayback: creating BufferSource, speed:',
+      state.speed,
+      'semitone:',
+      state.semitone,
+    );
     const src = ctx.createBufferSource();
     src.buffer = _beatportAudioBuffer;
     src.playbackRate.value = _getBeatportPlaybackRate();
@@ -731,6 +768,7 @@ export function createAudioEngine(): AudioEngineAPI {
 
     _beatportStartTime = ctx.currentTime;
     const off = Math.max(0, _beatportStartOffset);
+    applyPitchState();
     src.start(0, off >= _beatportAudioBuffer.duration ? 0 : off);
     bufferSource = src;
     _isBufferPlaying = true;
