@@ -9,6 +9,7 @@ interface SpeedCardProps {
   onBpmChange: (bpm: number) => void;
   onSpeedChange: (speed: number) => void;
   onMasterTempoToggle: () => void;
+  onReset: () => void;
 }
 
 const BASE_BPM = 128;
@@ -26,6 +27,7 @@ export const SpeedCard: React.FC<SpeedCardProps> = ({
   onBpmChange,
   onSpeedChange,
   onMasterTempoToggle,
+  onReset,
 }) => {
   const isAudio = mediaType === 'audio';
 
@@ -134,6 +136,13 @@ export const SpeedCard: React.FC<SpeedCardProps> = ({
               MT
             </button>
           )}
+          <button
+            onClick={onReset}
+            className="w-[24px] h-[24px] rounded-full border-0 cursor-pointer flex items-center justify-center text-[14px] transition-colors"
+            style={{ background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}
+            title="Сбросить скорость">
+            ↺
+          </button>
         </div>
       </div>
 

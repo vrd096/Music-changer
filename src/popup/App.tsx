@@ -268,6 +268,14 @@ export const PopupApp: React.FC = () => {
       return next;
     });
   }, [sendCommand, speed, semitone, saveState]);
+
+  const handleReset = useCallback(() => {
+    setSpeed(1);
+    setBpm(128);
+    setSemitone(0);
+    saveState(1, 0, masterTempo);
+    sendCommand({ speed: 1, semitone: 0 });
+  }, [sendCommand, masterTempo, saveState]);
   const handleEqBandChange = useCallback(
     (i: number, g: number) => {
       setEqBands((p) => {
@@ -378,7 +386,11 @@ export const PopupApp: React.FC = () => {
       {!pendingHostUrl && connectionStatus === 'connected' && (
         <>
           {visibleComponents.tonality && (
-            <TonalityCard semitone={semitone} onChange={handleSemitoneChange} />
+            <TonalityCard
+              semitone={semitone}
+              onChange={handleSemitoneChange}
+              onReset={handleReset}
+            />
           )}
           {visibleComponents.speed && (
             <SpeedCard
@@ -390,6 +402,7 @@ export const PopupApp: React.FC = () => {
               onBpmChange={handleBpmChange}
               onSpeedChange={handleSpeedChange}
               onMasterTempoToggle={handleMasterTempoToggle}
+              onReset={handleReset}
             />
           )}
           {visibleComponents.eq && (
