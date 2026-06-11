@@ -190,6 +190,11 @@ document.addEventListener('transpose-dispatch-controls-to-content', ((event: Cus
       const { index, gain } = params.eqBand as { index: number; gain: number };
       audioEngine.setEqBand(index, gain);
     }
+    chrome?.storage?.local?.set({
+      popupSpeed: audioEngine.getState().speed ?? 1,
+      popupSemitone: audioEngine.getState().semitone ?? 0,
+      popupMasterTempo: false,
+    });
     return;
   }
 
@@ -230,6 +235,18 @@ document.addEventListener('transpose-dispatch-controls-to-content', ((event: Cus
     document.querySelectorAll('video, audio').forEach((el) => {
       if (params.action === 'play') (el as HTMLMediaElement).play().catch(() => {});
       else if (params.action === 'pause') (el as HTMLMediaElement).pause();
+    });
+  }
+
+  if (
+    params.speed !== undefined ||
+    params.semitone !== undefined ||
+    params.masterTempo !== undefined
+  ) {
+    chrome?.storage?.local?.set({
+      popupSpeed: pipeline?.getState().speed ?? 1,
+      popupSemitone: pipeline?.getState().semitone ?? 0,
+      popupMasterTempo: pipeline?.getState().masterTempo ?? false,
     });
   }
 }) as EventListener);

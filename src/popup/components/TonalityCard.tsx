@@ -3,9 +3,10 @@ import React, { useCallback } from 'react';
 interface TonalityCardProps {
   semitone: number;
   onChange: (value: number) => void;
+  onReset: () => void;
 }
 
-export const TonalityCard: React.FC<TonalityCardProps> = ({ semitone, onChange }) => {
+export const TonalityCard: React.FC<TonalityCardProps> = ({ semitone, onChange, onReset }) => {
   const percentage = ((semitone + 12) / 24) * 100;
   const fmtValue = semitone > 0 ? `+${semitone}` : `${semitone}`;
 
@@ -26,16 +27,25 @@ export const TonalityCard: React.FC<TonalityCardProps> = ({ semitone, onChange }
           style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
           Тональность
         </span>
-        <span
-          className="font-bold tracking-tight"
-          style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
-          {fmtValue}{' '}
+        <div className="flex items-center gap-2">
           <span
-            className="font-normal"
-            style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-            st
+            className="font-bold tracking-tight"
+            style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
+            {fmtValue}{' '}
+            <span
+              className="font-normal"
+              style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+              st
+            </span>
           </span>
-        </span>
+          <button
+            onClick={onReset}
+            className="w-[24px] h-[24px] rounded-full border-0 cursor-pointer flex items-center justify-center text-[14px] transition-colors"
+            style={{ background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}
+            title="Сбросить тональность">
+            ↺
+          </button>
+        </div>
       </div>
 
       {/* Custom range slider */}
