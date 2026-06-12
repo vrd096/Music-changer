@@ -1,6 +1,10 @@
 import { createWorkletLoader, type WorkletLoader } from './worklet-loader';
 import { DEFAULT_EQ_BANDS, type EqBand } from '../../shared/types';
 import type { AudioEngineState } from '../interception/types';
+import { BpmAnalyzer } from './bpm-analyzer';
+import { KeyAnalyzer } from './key-analyzer';
+import type { BpmResult } from './bpm-analyzer';
+import type { KeyResult } from './key-analyzer';
 
 export interface ProcessingPipeline {
   connect(sourceNode: AudioNode | null, mediaEl?: HTMLMediaElement | null): void;
@@ -37,6 +41,7 @@ export function createPipeline(): ProcessingPipeline {
 
   let audioContext: AudioContext | null = null;
   let workletNode: AudioWorkletNode | null = null;
+  let captureNode: AudioWorkletNode | null = null;
   let gainNode: GainNode | null = null;
   let currentSource: AudioNode | null = null;
   let mediaElement: HTMLMediaElement | null = null;
@@ -54,6 +59,31 @@ export function createPipeline(): ProcessingPipeline {
   let bufferSeekedHandler: (() => void) | null = null;
 
   const workletLoader: WorkletLoader = createWorkletLoader();
+
+  let bpmAnalyzer: BpmAnalyzer | null = null;
+  let keyAnalyzer: KeyAnalyzer | null = null;
+  let captureReady = false;
+
+  let lastBpm: number | null = null;
+  let lastKey: string | null = null;
+
+  function sendMetricsUpdate(): void {
+    const msg = {
+      type: 'METRICS_UPDATE',
+      payload: { bpm: lastBpm, key: lastKey, isCapturing: true },
+    };
+    document.dispatchEvent(new CustomEvent('tp-metrics-update', { detail: msg }));
+  }
+
+  function sendBpmResult(result: BpmResult): void {
+    lastBpm = result.bpm;
+    sendMetricsUpdate();
+  }
+
+  function sendKeyResult(result: KeyResult): void {
+    lastKey = result.key;
+    sendMetricsUpdate();
+  }
 
   function sendStateUpdate(): void {
     try {
@@ -166,10 +196,96 @@ export function createPipeline(): ProcessingPipeline {
       '[Pipeline] initWorkletAndConnect: graph connected — source→worklet→eq→gain→destination',
     );
 
+    if (!captureReady) {
+      initCaptureAndAnalyzers(ctx).catch((err) => {
+        console.warn('[Pipeline] capture/analyzers init failed:', err);
+      });
+    }
+
     applyPitchState();
     applyEqState();
     applyBufferPlaybackRate();
     console.log('[Pipeline] initWorkletAndConnect: pitch/eq/buffer state applied');
+  }
+
+  async function initCaptureAndAnalyzers(ctx: AudioContext): Promise<void> {
+    console.log('[Pipeline] initCaptureAndAnalyzers: called, captureReady=', captureReady);
+    if (captureReady) return;
+
+    const extOrigin =
+      (typeof chrome !== 'undefined' && chrome.runtime?.getURL ? chrome.runtime.getURL('') : '') ||
+      document.documentElement.dataset.tpExtensionOrigin ||
+      '';
+    console.log('[Pipeline] initCaptureAndAnalyzers: extOrigin=', extOrigin);
+    if (!extOrigin) {
+      console.warn('[Pipeline] initCaptureAndAnalyzers: no extOrigin, aborting');
+      return;
+    }
+
+    try {
+      console.log('[Pipeline] initCaptureAndAnalyzers: loading capture-processor.js...');
+      await ctx.audioWorklet.addModule(extOrigin + 'capture-processor.js');
+      console.log('[Pipeline] initCaptureAndAnalyzers: capture-processor.js loaded OK');
+    } catch (err) {
+      console.warn('[Pipeline] capture-processor.js load failed:', err);
+      return;
+    }
+
+    captureNode = new AudioWorkletNode(ctx, 'capture-processor', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+    });
+    console.log('[Pipeline] initCaptureAndAnalyzers: captureNode created');
+
+    if (currentSource) {
+      try {
+        currentSource.connect(captureNode);
+        console.log('[Pipeline] initCaptureAndAnalyzers: currentSource connected to captureNode');
+      } catch (err) {
+        console.warn('[Pipeline] initCaptureAndAnalyzers: source→capture connect failed:', err);
+      }
+    } else {
+      console.warn('[Pipeline] initCaptureAndAnalyzers: no currentSource to connect');
+    }
+
+    if (!bpmAnalyzer) {
+      bpmAnalyzer = new BpmAnalyzer(ctx.sampleRate);
+      bpmAnalyzer.setCallback((result) => {
+        console.log('[Pipeline] BPM callback:', result);
+        sendBpmResult(result);
+      });
+      console.log(
+        '[Pipeline] initCaptureAndAnalyzers: BpmAnalyzer created, sampleRate=',
+        ctx.sampleRate,
+      );
+    }
+    if (!keyAnalyzer) {
+      keyAnalyzer = new KeyAnalyzer(ctx.sampleRate);
+      keyAnalyzer.setCallback((result) => {
+        console.log('[Pipeline] KEY callback:', result);
+        sendKeyResult(result);
+      });
+      keyAnalyzer.start();
+      console.log('[Pipeline] initCaptureAndAnalyzers: KeyAnalyzer created and started');
+    }
+
+    let chunkCount = 0;
+    captureNode.port.onmessage = (event: MessageEvent) => {
+      if (event.data?.type === 'audio' && event.data.samples instanceof Float32Array) {
+        chunkCount++;
+        if (chunkCount <= 3 || chunkCount % 50 === 0) {
+          console.log(
+            '[Pipeline] capture chunk #' + chunkCount,
+            'len=' + event.data.samples.length,
+          );
+        }
+        bpmAnalyzer?.addChunk(event.data.samples);
+        keyAnalyzer?.addChunk(event.data.samples);
+      }
+    };
+
+    captureReady = true;
+    console.log('[Pipeline] initCaptureAndAnalyzers: DONE, captureReady=true');
   }
 
   function getBufferPlaybackRate(): number {
@@ -224,6 +340,14 @@ export function createPipeline(): ProcessingPipeline {
       newSrc.connect(worklet);
     } else {
       newSrc.connect(gainNode || ctx.destination);
+    }
+
+    if (captureNode) {
+      try {
+        newSrc.connect(captureNode);
+      } catch {
+        // ignore
+      }
     }
 
     bufferStartTime = ctx.currentTime;
@@ -531,6 +655,13 @@ export function createPipeline(): ProcessingPipeline {
       mediaElement = null;
       workletConnected = false;
       isBufferSource = false;
+      bpmAnalyzer?.destroy();
+      bpmAnalyzer = null;
+      keyAnalyzer?.destroy();
+      keyAnalyzer = null;
+      captureNode?.disconnect();
+      captureNode = null;
+      captureReady = false;
     },
   };
 

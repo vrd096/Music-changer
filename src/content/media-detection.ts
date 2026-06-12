@@ -106,7 +106,7 @@ export const isBeatport = window.location.href.includes('beatport.com');
       return origCMS.call(this, element);
     };
     try {
-      (window as any).___tp_earlyContext = new AudioContext();
+      (window as any).___tp_earlyContext = new AudioContext({ sampleRate: 44100 });
     } catch {}
   }
 })();

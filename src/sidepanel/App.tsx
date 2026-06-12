@@ -61,6 +61,39 @@ export const SidePanelApp: React.FC = () => {
       if (data.visibleComponents)
         setVisibleComponents((prev) => ({ ...prev, ...data.visibleComponents }));
     });
+    chrome.storage.local.get(['detectedBpm', 'detectedKey', 'isDetecting'], (data) => {
+      if (data.detectedBpm !== undefined) setDetectedBpm(data.detectedBpm);
+      if (data.detectedKey !== undefined) setDetectedKey(data.detectedKey);
+      if (data.isDetecting !== undefined) setIsDetecting(data.isDetecting);
+    });
+    const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>) => {
+      console.log('[SidePanel] storage.onChanged:', Object.keys(changes));
+      if (changes.detectedBpm !== undefined) {
+        console.log('[SidePanel] storage.onChanged detectedBpm:', changes.detectedBpm.newValue);
+        setDetectedBpm(changes.detectedBpm.newValue ?? null);
+        if (changes.isDetecting?.newValue === false) setIsDetecting(false);
+      }
+      if (changes.detectedKey !== undefined) {
+        console.log('[SidePanel] storage.onChanged detectedKey:', changes.detectedKey.newValue);
+        setDetectedKey(changes.detectedKey.newValue ?? null);
+      }
+      if (changes.isDetecting !== undefined) {
+        console.log('[SidePanel] storage.onChanged isDetecting:', changes.isDetecting.newValue);
+        setIsDetecting(changes.isDetecting.newValue);
+      }
+    };
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    const pollInterval = setInterval(() => {
+      chrome.storage.local.get(['detectedBpm', 'detectedKey', 'isDetecting'], (data) => {
+        if (data.detectedBpm !== undefined) setDetectedBpm(data.detectedBpm);
+        if (data.detectedKey !== undefined) setDetectedKey(data.detectedKey);
+        if (data.isDetecting !== undefined) setIsDetecting(data.isDetecting);
+      });
+    }, 1000);
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+      clearInterval(pollInterval);
+    };
   }, []);
   const getActiveTabId = useCallback(async (): Promise<number | null> => {
     try {
@@ -132,11 +165,19 @@ export const SidePanelApp: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const handleMessage = (msg: ServiceWorkerMessage) => {
+    const handleMessage = (msg: ServiceWorkerMessage | any) => {
+      if (msg.type === 'METRICS_UPDATE') {
+        const p = msg.payload || msg;
+        if (p.bpm !== undefined) setDetectedBpm(p.bpm);
+        if (p.key !== undefined) setDetectedKey(p.key);
+        if (p.isCapturing) setIsDetecting(false);
+        return;
+      }
       if (msg.sender === 'service-worker' && msg.command === 'connect') {
         if (msg.noPermissionContext) setConnectionStatus('no-permission');
         else {
           setConnectionStatus('connected');
+          setIsDetecting(true);
           if (msg.tabId) activeTabIdRef.current = msg.tabId;
           if (msg.altUrl) {
             const url = msg.altUrl;

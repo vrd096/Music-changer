@@ -41,6 +41,12 @@ window.addEventListener('tp-dispatcher-message', ((event: CustomEvent) => {
   }
 }) as EventListener);
 
+window.addEventListener('tp-metrics-update', ((event: CustomEvent) => {
+  const detail = event.detail;
+  if (!detail) return;
+  chrome.runtime.sendMessage(detail, () => void chrome.runtime.lastError);
+}) as EventListener);
+
 window.addEventListener('tp-command', ((event: CustomEvent) => {
   const detail = event.detail;
   if (!detail || typeof detail.command !== 'string') return;

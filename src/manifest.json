@@ -57,6 +57,7 @@
         "rb.wasm",
         "bungee-processor.js",
         "soundtouch-processor.js",
+        "capture-processor.js",
         "assets/i18n/**",
         "popup/**",
         "sidepanel/**",

@@ -418,6 +418,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
   try {
+    console.log('[SW] onMessage received:', msg.type, 'from:', sender.tab?.id);
+    if (msg.type === 'METRICS_UPDATE') {
+      console.log('[SW] forwarding METRICS_UPDATE:', JSON.stringify(msg));
+      sendWithRetry(msg, 'metrics-forward');
+      sendResponse(true);
+      return;
+    }
     if (msg.type === 'request-tabcapture') {
       const targetTabId = msg.tabId ?? sender.tab?.id;
       if (targetTabId) {

@@ -83,6 +83,7 @@ const requiredFiles = [
   'rb.wasm',
   'bungee-processor.js',
   'soundtouch-processor.js',
+  'capture-processor.js',
 ];
 
 let allFound = true;
