@@ -43,9 +43,27 @@ window.addEventListener('tp-dispatcher-message', ((event: CustomEvent) => {
 
 window.addEventListener('tp-metrics-update', ((event: CustomEvent) => {
   const detail = event.detail;
+  console.log('[Dispatcher] tp-metrics-update received:', detail?.type, detail?.payload);
   if (!detail) return;
-  chrome.runtime.sendMessage(detail, () => void chrome.runtime.lastError);
+  chrome.runtime.sendMessage(detail, () => {
+    if (chrome.runtime.lastError) {
+      console.warn('[Dispatcher] sendMessage failed:', chrome.runtime.lastError.message);
+    } else {
+      console.log('[Dispatcher] sendMessage OK');
+    }
+  });
 }) as EventListener);
+
+window.addEventListener('tp-request-bpm-capture', ((_event: CustomEvent) => {
+  console.log('[Dispatcher] tp-request-bpm-capture received');
+  chrome.runtime.sendMessage({ type: 'REQUEST_BPM_CAPTURE' }, () => void chrome.runtime.lastError);
+}) as EventListener);
+
+chrome.runtime.onMessage.addListener((msg: any) => {
+  if (msg.type === 'TABCAPTURE_READY') {
+    window.dispatchEvent(new CustomEvent('tp-tabcapture-ready'));
+  }
+});
 
 window.addEventListener('tp-command', ((event: CustomEvent) => {
   const detail = event.detail;

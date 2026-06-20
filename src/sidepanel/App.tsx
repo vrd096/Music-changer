@@ -218,8 +218,12 @@ export const SidePanelApp: React.FC = () => {
       if (tabId) activeTabIdRef.current = tabId;
       chrome.runtime.sendMessage({ sender: 'sidepanel', command: 'ping' }).catch(() => {});
     });
+    const keepalive = setInterval(() => {
+      chrome.runtime.sendMessage({ sender: 'sidepanel', command: 'ping' }).catch(() => {});
+    }, 20000);
     return () => {
       chrome.runtime.onMessage.removeListener(handleMessage);
+      clearInterval(keepalive);
     };
   }, [getActiveTabId]);
 

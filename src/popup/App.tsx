@@ -197,8 +197,10 @@ export const PopupApp: React.FC = () => {
 
   useEffect(() => {
     const handleMessage = (msg: ServiceWorkerMessage | any) => {
+      console.log('[Popup] onMessage:', msg?.type, msg?.command, JSON.stringify(msg).substring(0, 200));
       if (msg.type === 'METRICS_UPDATE') {
         const p = msg.payload || msg;
+        console.log('[Popup] METRICS_UPDATE:', JSON.stringify(p));
         if (p.bpm !== undefined) setDetectedBpm(p.bpm);
         if (p.key !== undefined) setDetectedKey(p.key);
         if (p.isCapturing) setIsDetecting(false);
@@ -254,8 +256,12 @@ export const PopupApp: React.FC = () => {
       if (tabId) activeTabIdRef.current = tabId;
       chrome.runtime.sendMessage({ sender: 'popup', command: 'ping' }).catch(() => {});
     });
+    const keepalive = setInterval(() => {
+      chrome.runtime.sendMessage({ sender: 'popup', command: 'ping' }).catch(() => {});
+    }, 20000);
     return () => {
       chrome.runtime.onMessage.removeListener(handleMessage);
+      clearInterval(keepalive);
     };
   }, [getActiveTabId]);
 

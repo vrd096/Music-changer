@@ -70,6 +70,8 @@ const requiredFiles = [
   'sidepanel/index.js',
   'tabcapture/tabcapture.html',
   'tabcapture/tabcapture.js',
+  'offscreen/offscreen.html',
+  'offscreen/offscreen.js',
   'assets/debug/debug.html',
   'assets/debug/debug.js',
   'assets/debug/audio-worklet-test.js',

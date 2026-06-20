@@ -22,7 +22,7 @@ export class BpmAnalyzer {
 
   private readonly WINDOW_SIZE = 50;
   private readonly MIN_VALUES_FOR_SHOW = 35;
-  private readonly MAX_STDDEV = 6.0;
+  private readonly MAX_STDDEV: number;
 
   private valueWindow: number[] = [];
   private displayedBpm: number | null = null;
@@ -30,8 +30,9 @@ export class BpmAnalyzer {
   private addChunkCount = 0;
   private analyzeChunkCount = 0;
 
-  constructor(sampleRate: number) {
+  constructor(sampleRate: number, maxStddev?: number) {
     this.sampleRate = sampleRate;
+    this.MAX_STDDEV = maxStddev ?? 6.0;
     this.buffer = new Float32Array(this.BUFFER_SIZE);
 
     console.log(

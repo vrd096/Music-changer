@@ -231,6 +231,13 @@ export function createAudioEngine(): AudioEngineAPI {
 
   let lastBpm: number | null = null;
   let lastKey: string | null = null;
+  let bpmKeyCaptureRequested = false;
+
+  function requestBpmKeyCapture(): void {
+    if (bpmKeyCaptureRequested) return;
+    bpmKeyCaptureRequested = true;
+    window.dispatchEvent(new CustomEvent('tp-request-bpm-capture', { detail: {} }));
+  }
 
   function sendMetricsUpdate(): void {
     const msg = {
@@ -667,7 +674,6 @@ export function createAudioEngine(): AudioEngineAPI {
           console.log('[AudioEngine] SoundTouchJS processor ready');
           applyPitchState();
           _rerouteBeatportIfNeeded();
-          initBpmKeyAnalyzers(ctx);
         } catch (err) {
           console.warn('[Content] SoundTouchJS setup failed, falling back to varispeed:', err);
           isTpReady = true;
@@ -863,7 +869,6 @@ export function createAudioEngine(): AudioEngineAPI {
     const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
     if (!ctx || !_beatportAudioBuffer) return;
     stopBeatportPlayback();
-    initBpmKeyAnalyzers(ctx);
     console.log(
       '[AudioEngine] startBeatportPlayback: creating BufferSource, speed:',
       state.speed,
@@ -888,16 +893,6 @@ export function createAudioEngine(): AudioEngineAPI {
       console.log('[AudioEngine] Beatport BufferSource → destination (no worklet)');
     }
 
-    // Connect to captureNode for BPM/Key analysis
-    if (captureNode) {
-      try {
-        src.connect(captureNode);
-        console.log('[AudioEngine] Beatport BufferSource → captureNode');
-      } catch (err) {
-        console.warn('[AudioEngine] Beatport BufferSource → captureNode failed:', err);
-      }
-    }
-
     _beatportStartTime = ctx.currentTime;
     const off = Math.max(0, _beatportStartOffset);
     applyPitchState();
@@ -912,7 +907,22 @@ export function createAudioEngine(): AudioEngineAPI {
     };
   }
 
+  let pendingBeatportUrl: string | null = null;
+
+  window.addEventListener('tp-tabcapture-ready', () => {
+    if (pendingBeatportUrl) {
+      const url = pendingBeatportUrl;
+      pendingBeatportUrl = null;
+      doPrepareBeatportAudio(url);
+    }
+  });
+
   function prepareBeatportAudio(url: string): void {
+    pendingBeatportUrl = url;
+    requestBpmKeyCapture();
+  }
+
+  function doPrepareBeatportAudio(url: string): void {
     if (_lastKnownSrc === url && _beatportAudioBuffer) {
       // Ensure worklet is initialized before playback
       const nw =
