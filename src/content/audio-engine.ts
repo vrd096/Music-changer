@@ -303,7 +303,7 @@ export function createAudioEngine(): AudioEngineAPI {
     }
 
     if (!bpmAnalyzer) {
-      bpmAnalyzer = new BpmAnalyzer(ctx.sampleRate);
+      bpmAnalyzer = new BpmAnalyzer(ctx.sampleRate, 1.5);
       bpmAnalyzer.setCallback((result) => {
         console.log('[AudioEngine] BPM callback:', result);
         sendBpmResult(result);
@@ -910,6 +910,7 @@ export function createAudioEngine(): AudioEngineAPI {
   let pendingBeatportUrl: string | null = null;
 
   window.addEventListener('tp-tabcapture-ready', () => {
+    console.log('[AudioEngine] tp-tabcapture-ready received, pendingBeatportUrl:', pendingBeatportUrl);
     if (pendingBeatportUrl) {
       const url = pendingBeatportUrl;
       pendingBeatportUrl = null;
@@ -918,11 +919,14 @@ export function createAudioEngine(): AudioEngineAPI {
   });
 
   function prepareBeatportAudio(url: string): void {
+    console.log('[AudioEngine] prepareBeatportAudio:', url);
     pendingBeatportUrl = url;
     requestBpmKeyCapture();
+    doPrepareBeatportAudio(url);
   }
 
   function doPrepareBeatportAudio(url: string): void {
+    console.log('[AudioEngine] doPrepareBeatportAudio:', url, 'lastKnownSrc:', _lastKnownSrc);
     if (_lastKnownSrc === url && _beatportAudioBuffer) {
       // Ensure worklet is initialized before playback
       const nw =
@@ -1023,6 +1027,12 @@ export function createAudioEngine(): AudioEngineAPI {
     _beatportStartOffset = 0;
     _beatportStartTime = 0;
     _isBeatportSeeking = false;
+    bpmKeyCaptureRequested = false;
+    lastBpm = null;
+    lastKey = null;
+    bpmAnalyzer?.reset();
+    keyAnalyzer?.reset();
+    sendMetricsUpdate();
   }
 
   function destroy(): void {

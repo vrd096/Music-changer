@@ -124,6 +124,11 @@ export class BpmAnalyzer {
         bufferSize: this.BUFFER_SIZE,
         postMessage: (msg) => {
           if (msg.type === 'bpm' || msg.type === 'bpmStable') {
+            const c = msg.data?.bpm;
+            if (c && c.length > 0) {
+              const top3 = c.slice(0, 5).map((v: any) => `${v.tempo}(${v.count})`).join(', ');
+              console.log('[BpmAnalyzer] candidates: ' + top3);
+            }
             this.handleResult(msg.data);
           }
         },
@@ -137,7 +142,7 @@ export class BpmAnalyzer {
     if (!candidates.bpm || candidates.bpm.length === 0) return null;
 
     const valid = candidates.bpm.filter(
-      (c) => c.tempo >= 30 && c.tempo <= 300 && (c.count ?? 0) >= 1,
+      (c) => c.tempo >= 60 && c.tempo <= 200 && (c.count ?? 0) >= 1,
     );
 
     if (valid.length === 0) return null;
@@ -145,24 +150,53 @@ export class BpmAnalyzer {
     const top = valid[0];
     const topCount = top.count ?? 0;
 
-    for (let i = 1; i < valid.length; i++) {
+    const scored: Array<{ tempo: number; count: number; score: number }> = [];
+
+    for (let i = 0; i < valid.length; i++) {
       const cand = valid[i];
       const candCount = cand.count ?? 0;
+      if (candCount < topCount * 0.2) break;
 
-      if (candCount < topCount * 0.5) break;
+      let score = candCount;
 
-      const ratio = cand.tempo / top.tempo;
+      if (cand.tempo >= 120 && cand.tempo <= 150) score *= 1.4;
+      else if (cand.tempo >= 110 && cand.tempo <= 160) score *= 1.2;
+      else if (cand.tempo >= 100 && cand.tempo <= 170) score *= 1.1;
 
-      if (ratio > 1.4 && ratio < 1.56) {
-        return cand.tempo;
+      for (let j = 0; j < valid.length; j++) {
+        if (i === j) continue;
+        const other = valid[j];
+        const otherCount = other.count ?? 0;
+        const ratio = cand.tempo / other.tempo;
+
+        if (ratio > 1.85 && ratio < 2.15) {
+          if (cand.tempo > other.tempo) {
+            score *= 1.6;
+          } else {
+            score *= 0.4;
+          }
+        }
+
+        if (ratio > 1.4 && ratio < 1.6) {
+          score *= 1.2;
+        }
+
+        if (ratio > 0.48 && ratio < 0.53) {
+          if (cand.tempo > other.tempo) {
+            score *= 1.6;
+          } else {
+            score *= 0.4;
+          }
+        }
       }
 
-      if (ratio > 1.9 && ratio < 2.1) {
-        return top.tempo;
-      }
+      scored.push({ tempo: cand.tempo, count: candCount, score });
     }
 
-    return top.tempo;
+    if (scored.length === 0) return top.tempo;
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored[0].tempo;
   }
 
   private handleResult(candidates: BpmCandidates): void {

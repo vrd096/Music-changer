@@ -120,7 +120,9 @@ let bpmKeyCaptureActive = false;
 let bpmKeyCaptureTabId: number | null = null;
 
 async function initiateBpmKeyCapture(tabId: number): Promise<void> {
-  if (bpmKeyCaptureActive) return;
+  if (bpmKeyCaptureActive) {
+    await stopBpmKeyCapture();
+  }
   try {
     await ensureOffscreenDocument();
     const streamId = await new Promise<string>((resolve, reject) => {
