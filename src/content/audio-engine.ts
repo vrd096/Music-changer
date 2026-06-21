@@ -50,11 +50,23 @@ function watchBeatportElement(el: HTMLMediaElement): void {
   } catch {}
   const originalPlay = el.play.bind(el);
   let _playRequested = false;
+  let _userGestureCtx: AudioContext | null = null;
   el.play = function (): Promise<void> {
     const src = el.src || el.currentSrc || el.getAttribute('src') || '';
     if (src.includes('geo-samples.beatport.com')) return originalPlay();
     _playRequested = true;
     _pendingPlay = true;
+    if (!_userGestureCtx) {
+      try {
+        _userGestureCtx = new AudioContext({ sampleRate: 44100 });
+        (window as any).___tp_earlyContext = _userGestureCtx;
+        console.log('[Content] Beatport: created AudioContext with user gesture');
+      } catch {}
+    }
+    if (_userGestureCtx && _userGestureCtx.state === 'suspended') {
+      _userGestureCtx.resume();
+      console.log('[Content] Beatport: resumed AudioContext in play() handler');
+    }
     console.log('[Content] Beatport: play() intercepted, src not ready yet, deferring play');
     return Promise.resolve();
   };
@@ -112,6 +124,10 @@ function watchBeatportElement(el: HTMLMediaElement): void {
         _preparingBeatport = true;
         _pendingPlay = false;
         stopUrlPolling();
+        if (!(window as any).___tp_earlyContext) {
+          (window as any).___tp_earlyContext = new AudioContext({ sampleRate: 44100 });
+          console.log('[Content] Beatport: created AudioContext in onPlay (user gesture)');
+        }
         engine.prepareBeatportAudio(src);
       } else {
         _pendingPlay = true;
@@ -552,8 +568,11 @@ export function createAudioEngine(): AudioEngineAPI {
 
   function _rerouteBeatportIfNeeded(): void {
     if (!isBeatport || !_isBufferPlaying || !_beatportAudioBuffer) return;
-    const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
-    if (!ctx) return;
+    let ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
+    if (!ctx) {
+      ctx = new AudioContext({ sampleRate: 44100 });
+      (window as any).___tp_earlyContext = ctx;
+    }
     const worklet = tpWorkletNode || stWorkletNode;
     if (!worklet) return;
     console.log('[AudioEngine] Rerouting Beatport BufferSource through worklet');
@@ -618,7 +637,9 @@ export function createAudioEngine(): AudioEngineAPI {
       if (!audioContext) {
         const ec = (window as any).___tp_earlyContext;
         audioContext = ec || new AudioContext();
+        (window as any).___tp_earlyContext = audioContext;
         if (ec) console.log('[Content] Using early AudioContext');
+        else console.log('[Content] Created new AudioContext');
       }
       if (audioContext?.state === 'suspended') await audioContext.resume();
       const ctx = audioContext;
@@ -866,8 +887,15 @@ export function createAudioEngine(): AudioEngineAPI {
   }
 
   function startBeatportPlayback(): void {
-    const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
-    if (!ctx || !_beatportAudioBuffer) return;
+    let ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
+    if (!ctx) {
+      ctx = new AudioContext({ sampleRate: 44100 });
+      (window as any).___tp_earlyContext = ctx;
+    }
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    if (!_beatportAudioBuffer) return;
     stopBeatportPlayback();
     console.log(
       '[AudioEngine] startBeatportPlayback: creating BufferSource, speed:',
@@ -892,6 +920,18 @@ export function createAudioEngine(): AudioEngineAPI {
       src.connect(ctx.destination);
       console.log('[AudioEngine] Beatport BufferSource → destination (no worklet)');
     }
+
+    // Init BPM/Key analyzers via captureNode
+    initBpmKeyAnalyzers(ctx).then(() => {
+      if (captureNode) {
+        try {
+          src.connect(captureNode);
+          console.log('[AudioEngine] Beatport BufferSource → captureNode (BPM/Key)');
+        } catch (err) {
+          console.warn('[AudioEngine] bufferSource → captureNode failed:', err);
+        }
+      }
+    });
 
     _beatportStartTime = ctx.currentTime;
     const off = Math.max(0, _beatportStartOffset);
@@ -921,7 +961,6 @@ export function createAudioEngine(): AudioEngineAPI {
   function prepareBeatportAudio(url: string): void {
     console.log('[AudioEngine] prepareBeatportAudio:', url);
     pendingBeatportUrl = url;
-    requestBpmKeyCapture();
     doPrepareBeatportAudio(url);
   }
 
@@ -948,8 +987,12 @@ export function createAudioEngine(): AudioEngineAPI {
     }
     _lastKnownSrc = url;
     _muteOriginalElement();
-    const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
-    if (!ctx) return;
+    let ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
+    if (!ctx) {
+      ctx = new AudioContext({ sampleRate: 44100 });
+      (window as any).___tp_earlyContext = ctx;
+      console.log('[AudioEngine] Created new AudioContext for Beatport');
+    }
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
 
     // Start worklet init early (in parallel with fetch)
@@ -983,9 +1026,12 @@ export function createAudioEngine(): AudioEngineAPI {
     xhr.responseType = 'arraybuffer';
     xhr.onload = () => {
       if (xhr.status === 200 || xhr.status === 0) {
-        const earlyContext = (window as any).___tp_earlyContext as AudioContext | undefined;
-        if (earlyContext)
-          earlyContext
+        let earlyContext = (window as any).___tp_earlyContext as AudioContext | undefined;
+        if (!earlyContext) {
+          earlyContext = new AudioContext({ sampleRate: 44100 });
+          (window as any).___tp_earlyContext = earlyContext;
+        }
+        earlyContext
             .decodeAudioData(xhr.response)
             .then((audioBuffer) => {
               _beatportAudioBuffer = audioBuffer;
@@ -1000,7 +1046,7 @@ export function createAudioEngine(): AudioEngineAPI {
 
   function pauseBeatportPlayback(): void {
     if (bufferSource && _isBufferPlaying) {
-      const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
+      const ctx = (window as any).___tp_earlyContext as AudioContext | null;
       if (ctx) _beatportStartOffset += ctx.currentTime - _beatportStartTime;
       stopBeatportPlayback();
     }
