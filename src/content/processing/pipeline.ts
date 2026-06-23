@@ -20,6 +20,7 @@ export interface ProcessingPipeline {
   setMasterTempo(v: boolean): void;
   getState(): AudioEngineState;
   setStrategyLevel(level: number): void;
+  stopCurrentAudio(): void;
   destroy(): void;
 }
 
@@ -74,9 +75,9 @@ export function createPipeline(): ProcessingPipeline {
     };
     console.log('[Pipeline] sendMetricsUpdate:', { bpm: lastBpm, key: lastKey });
     try {
-      window.dispatchEvent(new CustomEvent('tp-metrics-update', { detail: msg }));
+      window.postMessage({ __tp_metrics: true, detail: msg }, '*');
     } catch (err) {
-      console.warn('[Pipeline] sendMetricsUpdate dispatch failed:', err);
+      console.warn('[Pipeline] sendMetricsUpdate postMessage failed:', err);
     }
   }
 
@@ -128,12 +129,15 @@ export function createPipeline(): ProcessingPipeline {
       isBufferSource,
     });
     if (isDestroyed || workletConnected) return;
-    if (!currentSource) return;
+    if (!currentSource) {
+      console.log('[Pipeline] No source (fallback mode) — BPM/Key not available');
+      sendMetricsUpdate();
+      return;
+    }
 
     const ctx = (audioContext || currentSource.context) as AudioContext;
     if (!ctx) { console.warn('[Pipeline] no AudioContext'); return; }
 
-    console.log('[Pipeline] AudioContext state:', ctx.state, 'sampleRate:', ctx.sampleRate);
     if (ctx.state === 'suspended') {
       const res = await ctx.resume();
       console.log('[Pipeline] AudioContext resume result:', ctx.state);
@@ -146,7 +150,6 @@ export function createPipeline(): ProcessingPipeline {
 
     console.log('[Pipeline] Loading worklet...');
     const node = await workletLoader.load(ctx);
-    console.log('[Pipeline] Worklet loaded:', !!node, node?.constructor?.name);
 
     if (!node) {
       console.log('[Pipeline] Worklet NULL — fallback to direct gain');
@@ -154,17 +157,14 @@ export function createPipeline(): ProcessingPipeline {
         try { currentSource.disconnect(); } catch {}
         currentSource.connect(gainNode);
         gainNode.connect(ctx.destination);
-        console.log('[Pipeline] Fallback connected: source→gain→destination');
       }
       return;
     }
 
     workletNode = node;
-    console.log('[Pipeline] Disconnecting stale nodes...');
     try { workletNode.disconnect(); } catch {}
     try { if (currentSource) currentSource.disconnect(); } catch {}
 
-    console.log('[Pipeline] Connecting: source→worklet');
     currentSource!.connect(workletNode);
 
     if (eqFilters.length === 0) {
@@ -189,27 +189,20 @@ export function createPipeline(): ProcessingPipeline {
       workletNode.connect(eqFilters[0]);
       const lastFilter = eqFilters[eqFilters.length - 1];
       lastFilter.connect(gainNode);
-      console.log('[Pipeline] Connected: worklet→eq→gain');
     } else {
       workletNode.connect(gainNode);
-      console.log('[Pipeline] Connected: worklet→gain (no EQ)');
     }
 
     gainNode.connect(ctx.destination);
     workletConnected = true;
-    console.log('[Pipeline] ✅ FULL GRAPH: source→worklet→eq→gain→destination');
 
     if (currentSource && currentSource.context) {
-      console.log('[Pipeline] Starting capture/analyzers...');
-      initCaptureAndAnalyzers(currentSource.context as AudioContext).catch((err) => {
-        console.warn('[Pipeline] initCaptureAndAnalyzers FAILED:', err);
-      });
+      initCaptureAndAnalyzers(currentSource.context as AudioContext).catch(() => {});
     }
 
     applyPitchState();
     applyEqState();
     applyBufferPlaybackRate();
-    console.log('[Pipeline] State applied. semitone:', state.semitone, 'speed:', state.speed);
   }
 
   async function initCaptureAndAnalyzers(ctx: AudioContext): Promise<void> {
@@ -286,6 +279,7 @@ export function createPipeline(): ProcessingPipeline {
     captureNode.port.onmessage = (event: MessageEvent) => {
       if (event.data?.type === 'audio' && event.data.samples instanceof Float32Array) {
         chunkCount++;
+
         if (chunkCount <= 5 || chunkCount % 100 === 0) {
           const samples = event.data.samples;
           let sum = 0;
@@ -297,6 +291,7 @@ export function createPipeline(): ProcessingPipeline {
             'rms=' + rms.toFixed(6),
           );
         }
+
         bpmAnalyzer?.addChunk(event.data.samples);
         keyAnalyzer?.addChunk(event.data.samples);
       }
@@ -484,23 +479,27 @@ export function createPipeline(): ProcessingPipeline {
 
   const pipeline: ProcessingPipeline = {
     connect(sourceNode: AudioNode | null, mediaEl?: HTMLMediaElement | null) {
-      console.log('[Pipeline] connect() called', {
-        hasSource: !!sourceNode,
-        sourceType: sourceNode?.constructor?.name,
-        hasMediaEl: !!mediaEl,
-        isDestroyed,
-      });
       if (isDestroyed) return;
 
       cleanupBufferElementHooks();
       stopBufferPlayback();
 
+      const prevWorkletSource = currentSource;
       currentSource = sourceNode;
       isBufferSource = !!(sourceNode && 'start' in sourceNode && 'buffer' in sourceNode);
       isBufferPlaying = false;
       bufferStartOffset = 0;
       bufferStartTime = 0;
+      const wasWorkletConnected = workletConnected;
       workletConnected = false;
+
+      if (prevWorkletSource && sourceNode && prevWorkletSource !== sourceNode) {
+        try { (prevWorkletSource as any).stop?.(); } catch {}
+        try { prevWorkletSource.disconnect(); } catch {}
+      } else if (sourceNode === prevWorkletSource && wasWorkletConnected) {
+        workletConnected = true;
+        return;
+      }
 
       if (mediaEl) {
         mediaElement = mediaEl;
@@ -510,18 +509,15 @@ export function createPipeline(): ProcessingPipeline {
         audioContext = sourceNode.context as AudioContext;
       }
 
-      console.log('[Pipeline] connect', {
-        hasSource: !!sourceNode,
-        hasMediaEl: !!mediaEl,
-        ctxState: audioContext?.state,
-        ctxSampleRate: audioContext?.sampleRate,
-        isBufferSource,
-      });
-
       if (sourceNode && !isBufferSource) {
         initWorkletAndConnect().catch((err) => {
           console.warn('[Pipeline] initWorkletAndConnect failed:', err);
         });
+      }
+
+      if (!sourceNode) {
+        console.log('[Pipeline] Fallback mode — no source, clearing BPM/Key');
+        sendMetricsUpdate();
       }
 
       if (isBufferSource && mediaEl) {
@@ -657,6 +653,13 @@ export function createPipeline(): ProcessingPipeline {
     setStrategyLevel(level: number) {
       strategyLevel = level;
       sendStateUpdate();
+    },
+
+    stopCurrentAudio() {
+      if (currentSource) {
+        try { (currentSource as any).stop?.(); } catch {}
+        try { currentSource.disconnect(); } catch {}
+      }
     },
 
     destroy() {

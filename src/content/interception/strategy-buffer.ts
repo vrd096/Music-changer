@@ -3,6 +3,15 @@ import type { InterceptionStrategy, InterceptionResult } from './types';
 
 const BUFFER_FETCH_TIMEOUT_MS = 15000;
 
+function unmuteOriginalElement(el: HTMLMediaElement): void {
+  try {
+    el.volume = 1;
+    el.muted = false;
+  } catch {
+    // ignore
+  }
+}
+
 function muteOriginalElement(el: HTMLMediaElement): void {
   try {
     el.volume = 0;
@@ -12,15 +21,16 @@ function muteOriginalElement(el: HTMLMediaElement): void {
   }
 }
 
-function fetchAndDecode(url: string, ctx: AudioContext, signal: AbortSignal): Promise<AudioBuffer> {
-  return fetch(url, { signal })
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      return response.arrayBuffer();
-    })
-    .then((arrayBuffer) => ctx.decodeAudioData(arrayBuffer));
+async function fetchAndDecode(url: string, ctx: AudioContext, signal: AbortSignal): Promise<AudioBuffer> {
+  if (ctx.state === 'suspended') {
+    await ctx.resume();
+  }
+  const response = await fetch(url, { signal });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  return ctx.decodeAudioData(arrayBuffer);
 }
 
 export function createBufferStrategy(): InterceptionStrategy {
@@ -50,11 +60,6 @@ export function createBufferStrategy(): InterceptionStrategy {
       }
 
       const ctx = getOrCreateEarlyContext();
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
-
-      muteOriginalElement(el);
 
       const abortController = new AbortController();
       const timeout = setTimeout(() => abortController.abort(), BUFFER_FETCH_TIMEOUT_MS);
@@ -62,6 +67,7 @@ export function createBufferStrategy(): InterceptionStrategy {
       return fetchAndDecode(src, ctx, abortController.signal)
         .then((audioBuffer) => {
           clearTimeout(timeout);
+          muteOriginalElement(el);
           const bufferSource = ctx.createBufferSource();
           bufferSource.buffer = audioBuffer;
           return {
@@ -70,8 +76,10 @@ export function createBufferStrategy(): InterceptionStrategy {
             sourceNode: bufferSource,
           } satisfies InterceptionResult;
         })
-        .catch(() => {
+        .catch((err) => {
           clearTimeout(timeout);
+          unmuteOriginalElement(el);
+          console.warn('[BufferFetch] Failed:', err?.message || err);
           return {
             success: false,
             strategy: 4,

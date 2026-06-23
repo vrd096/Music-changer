@@ -7,6 +7,9 @@ interface BpmKeyCardProps {
 }
 
 export const BpmKeyCard: React.FC<BpmKeyCardProps> = ({ bpm, keyCamelot, isLoading }) => {
+  const showBpmSpinner = isLoading && bpm === null;
+  const showKeySpinner = isLoading && keyCamelot === null;
+
   return (
     <div className="flex gap-2">
       {/* BPM */}
@@ -18,7 +21,7 @@ export const BpmKeyCard: React.FC<BpmKeyCardProps> = ({ bpm, keyCamelot, isLoadi
           style={{ color: 'var(--text-muted)' }}>
           BPM
         </div>
-        {isLoading ? (
+        {showBpmSpinner ? (
           <>
             <div
               className="w-[18px] h-[18px] mx-auto rounded-full border-[2px] animate-spin"
@@ -54,7 +57,7 @@ export const BpmKeyCard: React.FC<BpmKeyCardProps> = ({ bpm, keyCamelot, isLoadi
           style={{ color: 'var(--text-muted)' }}>
           KEY
         </div>
-        {isLoading ? (
+        {showKeySpinner ? (
           <>
             <div
               className="w-[18px] h-[18px] mx-auto rounded-full border-[2px] animate-spin"

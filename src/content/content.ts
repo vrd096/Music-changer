@@ -20,6 +20,8 @@ let activeMediaElement: HTMLMediaElement | null = null;
 let lastConnectedSrc = '';
 const handledElements = new WeakSet<HTMLMediaElement>();
 
+let cascadeLock: Promise<void> | null = null;
+
 function isDirectHttpAudio(el: HTMLMediaElement): boolean {
   if (el instanceof HTMLVideoElement) return false;
   const src = el.src || el.currentSrc || '';
@@ -30,15 +32,15 @@ function isDirectHttpAudio(el: HTMLMediaElement): boolean {
 function getStrategiesForElement(el: HTMLMediaElement): InterceptionStrategy[] {
   if (isDirectHttpAudio(el)) {
     console.log(
-      '[Content] %c<audio> + direct HTTP URL detected — skipping Direct, trying Buffer Fetch first',
+      '[Content] %c<audio> + direct HTTP URL detected — Buffer Fetch → Hook → PreClaim → Fallback',
       'color: orange',
       '\nsrc:',
       (el.src || el.currentSrc || '').substring(0, 120),
     );
     return [
       createBufferStrategy(),
-      createPreClaimStrategy(),
       createAudioContextHookStrategy(),
+      createPreClaimStrategy(),
       createFallbackStrategy(),
     ];
   }
@@ -51,6 +53,7 @@ function getStrategiesForElement(el: HTMLMediaElement): InterceptionStrategy[] {
     '\nsrc:',
     (el.src || el.currentSrc || '').substring(0, 120),
   );
+  window.postMessage({ __tp_drm: true }, '*');
   return [
     createDirectStrategy(),
     createPreClaimStrategy(),
@@ -100,6 +103,15 @@ async function tryCascadeStrategies(
   el: HTMLMediaElement,
   strategies: InterceptionStrategy[],
 ): Promise<void> {
+  if (cascadeLock) {
+    console.log('[Content] Cascade running, waiting...');
+    await cascadeLock;
+    if (pipelineActive && el === activeMediaElement) {
+      console.log('[Content] Cascade completed for same element, skipping duplicate');
+      return;
+    }
+  }
+
   if (handledElements.has(el) && pipelineActive && el !== activeMediaElement) {
     console.log('[Content] Element already handled, skipping cascade');
     return;
@@ -108,9 +120,11 @@ async function tryCascadeStrategies(
   if (pipelineActive && el === activeMediaElement) {
     const currentSrc = el.src || el.currentSrc || '';
     if (currentSrc && currentSrc !== lastConnectedSrc) {
-      console.log('[Content] Same element but src changed — reconnecting');
+      console.log('[Content] Same element but src changed — stopping & muting');
       lastConnectedSrc = currentSrc;
       pipelineActive = false;
+      pipeline?.stopCurrentAudio();
+      try { (el as HTMLAudioElement).muted = true; } catch {}
     } else {
       console.log('[Content] Pipeline already active on same element, skipping cascade');
       return;
@@ -124,9 +138,11 @@ async function tryCascadeStrategies(
   }
 
   console.log('[Content] Starting cascade with', strategies.length, 'strategies');
+  let resolveLock: () => void;
+  cascadeLock = new Promise<void>((r) => { resolveLock = r; });
 
   for (const strategy of strategies) {
-    if (pipelineActive) return;
+    if (pipelineActive) { resolveLock!(); cascadeLock = null; return; }
 
     console.log('[Content] Trying', strategy.name, '(Level', strategy.level, ')');
 
@@ -159,6 +175,7 @@ async function tryCascadeStrategies(
         activeMediaElement = el;
         lastConnectedSrc = el.src || el.currentSrc || '';
         handledElements.add(el);
+        resolveLock!(); cascadeLock = null;
         setTimeout(() => pipeline?.setSemitone(0), 100);
         return;
       }
@@ -171,6 +188,7 @@ async function tryCascadeStrategies(
   if (!pipelineActive) {
     applyFallback(el);
   }
+  resolveLock!(); cascadeLock = null;
 }
 
 document.addEventListener('transpose-dispatch-controls-to-content', ((event: CustomEvent) => {

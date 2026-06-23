@@ -41,10 +41,19 @@ window.addEventListener('tp-dispatcher-message', ((event: CustomEvent) => {
   }
 }) as EventListener);
 
-window.addEventListener('tp-metrics-update', ((event: CustomEvent) => {
-  const detail = event.detail;
+window.addEventListener('message', ((event: MessageEvent) => {
+  if (event.data?.__tp_drm) {
+    chrome.storage.local.set({ isDrmSite: true }).catch(() => {});
+    return;
+  }
+  if (!event.data?.__tp_metrics) return;
+  const detail = event.data.detail;
   console.log('[Dispatcher] tp-metrics-update received:', detail?.type, detail?.payload);
   if (!detail) return;
+  const p = detail.payload || detail;
+  if (p.bpm === null || p.key === null) {
+    chrome.storage.local.set({ detectedBpm: null, detectedKey: null }).catch(() => {});
+  }
   chrome.runtime.sendMessage(detail, () => {
     if (chrome.runtime.lastError) {
       console.warn('[Dispatcher] sendMessage failed:', chrome.runtime.lastError.message);

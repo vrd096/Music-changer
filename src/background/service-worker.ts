@@ -479,13 +479,16 @@ chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
       const p = msg.payload || msg;
       const bpmVal = p.bpm;
       const hasBpm = typeof bpmVal === 'number' && bpmVal > 0;
+      const hasKey = typeof p.key === 'string' && p.key.length > 0;
       console.log(
         '[SW] METRICS_UPDATE bpm=' +
           bpmVal +
-          ' type=' +
-          typeof bpmVal +
+          ' key=' +
+          p.key +
           ' hasBpm=' +
           hasBpm +
+          ' hasKey=' +
+          hasKey +
           ' active=' +
           bpmKeyCaptureActive,
       );
@@ -493,7 +496,7 @@ chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
         .set({
           detectedBpm: bpmVal ?? null,
           detectedKey: p.key ?? null,
-          isDetecting: !hasBpm,
+          isDetecting: !(hasBpm && hasKey),
         })
         .catch(() => {});
       sendWithRetry(msg, 'metrics-forward');

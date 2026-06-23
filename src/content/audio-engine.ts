@@ -260,7 +260,7 @@ export function createAudioEngine(): AudioEngineAPI {
       type: 'METRICS_UPDATE',
       payload: { bpm: lastBpm, key: lastKey, isCapturing: true },
     };
-    window.dispatchEvent(new CustomEvent('tp-metrics-update', { detail: msg }));
+    window.postMessage({ __tp_metrics: true, detail: msg }, '*');
     try {
       chrome.runtime?.sendMessage(msg);
     } catch {

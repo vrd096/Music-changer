@@ -48,6 +48,7 @@ export const PopupApp: React.FC = () => {
   const [detectedKey, setDetectedKey] = useState<string | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
   const [showMT, setShowMT] = useState(true);
+  const [isDrmSite, setIsDrmSite] = useState(false);
 
   const [uiMode, setUiMode] = useState<string>('popup');
   const [visibleComponents, setVisibleComponents] = useState<Record<string, boolean>>({
@@ -67,7 +68,7 @@ export const PopupApp: React.FC = () => {
         setVisibleComponents((prev) => ({ ...prev, ...data.visibleComponents }));
     });
     chrome.storage.local.get(
-      ['tabcaptureNeeded', 'tabcaptureAudioUrl', 'detectedBpm', 'detectedKey', 'isDetecting'],
+      ['tabcaptureNeeded', 'tabcaptureAudioUrl', 'detectedBpm', 'detectedKey', 'isDetecting', 'isDrmSite'],
       (data) => {
         if (data.tabcaptureNeeded) {
           setTabCaptureNeeded(true);
@@ -76,8 +77,15 @@ export const PopupApp: React.FC = () => {
         if (data.detectedBpm !== undefined) setDetectedBpm(data.detectedBpm);
         if (data.detectedKey !== undefined) setDetectedKey(data.detectedKey);
         if (data.isDetecting !== undefined) setIsDetecting(data.isDetecting);
+        if (data.isDrmSite) setIsDrmSite(true);
       },
     );
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const url = tabs[0]?.url || '';
+      const drm = url.includes('spotify.com') || url.includes('soundcloud.com');
+      setIsDrmSite(drm);
+      if (!drm) chrome.storage.local.remove('isDrmSite').catch(() => {});
+    });
     const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>) => {
       if (changes.tabcaptureNeeded?.newValue) {
         setTabCaptureNeeded(true);
@@ -457,7 +465,7 @@ export const PopupApp: React.FC = () => {
               onBandChange={handleEqBandChange}
             />
           )}
-          {visibleComponents.bpmkey && (
+          {visibleComponents.bpmkey && !isDrmSite && (
             <BpmKeyCard bpm={detectedBpm} keyCamelot={detectedKey} isLoading={isDetecting} />
           )}
         </>
