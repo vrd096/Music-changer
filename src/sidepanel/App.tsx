@@ -2,7 +2,7 @@
 // SidePanel App — Music Pitch Changer
 // ============================================================
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { ServiceWorkerMessage, EqBand } from '../shared/types';
 import { DEFAULT_EQ_BANDS } from '../shared/types';
 import { useTheme } from '../shared/hooks/useTheme';
@@ -46,6 +46,14 @@ export const SidePanelApp: React.FC = () => {
   const [isDetecting, setIsDetecting] = useState(false);
   const [showMT, setShowMT] = useState(true);
   const [isDrmSite, setIsDrmSite] = useState(false);
+
+  const effectiveBpm = useMemo(() => {
+    if (detectedBpm !== null) {
+      return Math.round(detectedBpm * speed);
+    }
+    return null;
+  }, [detectedBpm, speed]);
+
   const [uiMode, setUiMode] = useState<string>('popup');
   const [visibleComponents, setVisibleComponents] = useState<Record<string, boolean>>({
     tonality: true,
@@ -424,6 +432,7 @@ export const SidePanelApp: React.FC = () => {
               onSpeedChange={handleSpeedChange}
               onMasterTempoToggle={handleMasterTempoToggle}
               onReset={handleReset}
+              detectedBpm={detectedBpm}
             />
           )}
           {visibleComponents.eq && (
@@ -435,7 +444,7 @@ export const SidePanelApp: React.FC = () => {
             />
           )}
           {visibleComponents.bpmkey && !isDrmSite && (
-            <BpmKeyCard bpm={detectedBpm} keyCamelot={detectedKey} isLoading={isDetecting} />
+            <BpmKeyCard bpm={effectiveBpm} keyCamelot={detectedKey} isLoading={isDetecting} />
           )}
         </>
       )}

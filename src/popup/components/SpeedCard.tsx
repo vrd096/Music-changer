@@ -6,6 +6,7 @@ interface SpeedCardProps {
   speed: number;
   masterTempo: boolean;
   showMT: boolean;
+  detectedBpm: number | null;
   onBpmChange: (bpm: number) => void;
   onSpeedChange: (speed: number) => void;
   onMasterTempoToggle: () => void;
@@ -24,6 +25,7 @@ export const SpeedCard: React.FC<SpeedCardProps> = ({
   speed,
   masterTempo,
   showMT,
+  detectedBpm,
   onBpmChange,
   onSpeedChange,
   onMasterTempoToggle,
@@ -106,7 +108,7 @@ export const SpeedCard: React.FC<SpeedCardProps> = ({
             style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
             {isAudio ? (
               <>
-                {bpm}{' '}
+                {detectedBpm !== null ? Math.round(detectedBpm * speed) : '--'}{' '}
                 <span
                   className="font-medium"
                   style={{ fontSize: '10px', color: 'var(--accent-secondary)' }}>

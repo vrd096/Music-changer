@@ -2,7 +2,7 @@
 // Popup App — Music Pitch Changer
 // ============================================================
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { MediaState, ServiceWorkerMessage, EqBand } from '../shared/types';
 import { DEFAULT_EQ_BANDS } from '../shared/types';
 import { useTheme } from '../shared/hooks/useTheme';
@@ -50,6 +50,13 @@ export const PopupApp: React.FC = () => {
   const [showMT, setShowMT] = useState(true);
   const [isDrmSite, setIsDrmSite] = useState(false);
 
+  const effectiveBpm = useMemo(() => {
+    if (detectedBpm !== null) {
+      return Math.round(detectedBpm * speed);
+    }
+    return null;
+  }, [detectedBpm, speed]);
+
   const [uiMode, setUiMode] = useState<string>('popup');
   const [visibleComponents, setVisibleComponents] = useState<Record<string, boolean>>({
     tonality: true,
@@ -68,7 +75,14 @@ export const PopupApp: React.FC = () => {
         setVisibleComponents((prev) => ({ ...prev, ...data.visibleComponents }));
     });
     chrome.storage.local.get(
-      ['tabcaptureNeeded', 'tabcaptureAudioUrl', 'detectedBpm', 'detectedKey', 'isDetecting', 'isDrmSite'],
+      [
+        'tabcaptureNeeded',
+        'tabcaptureAudioUrl',
+        'detectedBpm',
+        'detectedKey',
+        'isDetecting',
+        'isDrmSite',
+      ],
       (data) => {
         if (data.tabcaptureNeeded) {
           setTabCaptureNeeded(true);
@@ -205,7 +219,12 @@ export const PopupApp: React.FC = () => {
 
   useEffect(() => {
     const handleMessage = (msg: ServiceWorkerMessage | any) => {
-      console.log('[Popup] onMessage:', msg?.type, msg?.command, JSON.stringify(msg).substring(0, 200));
+      console.log(
+        '[Popup] onMessage:',
+        msg?.type,
+        msg?.command,
+        JSON.stringify(msg).substring(0, 200),
+      );
       if (msg.type === 'METRICS_UPDATE') {
         const p = msg.payload || msg;
         console.log('[Popup] METRICS_UPDATE:', JSON.stringify(p));
@@ -451,6 +470,7 @@ export const PopupApp: React.FC = () => {
               speed={speed}
               masterTempo={masterTempo}
               showMT={showMT}
+              detectedBpm={detectedBpm}
               onBpmChange={handleBpmChange}
               onSpeedChange={handleSpeedChange}
               onMasterTempoToggle={handleMasterTempoToggle}
@@ -466,7 +486,7 @@ export const PopupApp: React.FC = () => {
             />
           )}
           {visibleComponents.bpmkey && !isDrmSite && (
-            <BpmKeyCard bpm={detectedBpm} keyCamelot={detectedKey} isLoading={isDetecting} />
+            <BpmKeyCard bpm={effectiveBpm} keyCamelot={detectedKey} isLoading={isDetecting} />
           )}
         </>
       )}
