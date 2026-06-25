@@ -160,17 +160,8 @@ export const PopupApp: React.FC = () => {
       setTimeout(() => sendCommand(data, retryCount + 1), 1000);
       return;
     }
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.url) {
-      const urlObj = new URL(tab.url);
-      const pattern = `${urlObj.protocol}//${urlObj.hostname}/*`;
-      const hasPerms = await chrome.permissions.contains({ origins: [pattern] });
-      if (!hasPerms) {
-        setPendingHostUrl(tab.url);
-        setConnectionStatus('no-permission');
-      } else if (retryCount < 3) {
-        setTimeout(() => sendCommand(data, retryCount + 1), 800);
-      }
+    if (retryCount < 3) {
+      setTimeout(() => sendCommand(data, retryCount + 1), 800);
     }
   }, []);
 
@@ -268,6 +259,15 @@ export const PopupApp: React.FC = () => {
                 !url.includes('vk.com') &&
                 !url.includes('vkvideo.ru'),
             );
+            (async () => {
+              const urlObj = new URL(url);
+              const pattern = `${urlObj.protocol}//${urlObj.hostname}/*`;
+              const hasPerms = await chrome.permissions.contains({ origins: [pattern] });
+              if (!hasPerms) {
+                setPendingHostUrl(url);
+                setConnectionStatus('no-permission');
+              }
+            })();
           }
           chrome.storage.local.get(['popupSpeed', 'popupSemitone', 'popupMasterTempo'], (data) => {
             if (data.popupSpeed !== undefined) {
