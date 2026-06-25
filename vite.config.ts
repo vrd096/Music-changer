@@ -44,6 +44,7 @@ export default defineConfig({
         'popup/index': src('popup/index.html'),
         'sidepanel/index': src('sidepanel/index.html'),
         'tabcapture/tabcapture': src('tabcapture/tabcapture.html'),
+        'offscreen/offscreen': src('offscreen/offscreen.html'),
         'assets/debug/debug': src('assets/debug/debug.html'),
       },
       output: {

@@ -37,11 +37,31 @@ export function createMediaDetector(): MediaDetector {
   }
 
   function notifyCallbacks(el: HTMLMediaElement): void {
-    if (isBlockedUrl(window.location.href)) return;
-    if (isYouTubeSoundEffect(el)) return;
-    if (isPageUrlAsSrc(el)) return;
-    if (isLikelySoundEffect(el)) return;
+    if (isBlockedUrl(window.location.href)) {
+      console.log('[DEBUG] detector: blocked URL, skipping');
+      return;
+    }
+    if (isYouTubeSoundEffect(el)) {
+      console.log('[DEBUG] detector: YouTube sound effect, skipping');
+      return;
+    }
+    if (isPageUrlAsSrc(el)) {
+      console.log('[DEBUG] detector: page URL as src, skipping');
+      return;
+    }
+    if (isLikelySoundEffect(el)) {
+      console.log(
+        '[DEBUG] detector: likely sound effect, skipping src=' +
+          (el.src || el.currentSrc || '').substring(0, 80),
+      );
+      return;
+    }
 
+    console.log(
+      '[DEBUG] detector: NOTIFYING callbacks for',
+      el.tagName,
+      'src=' + ((el.src || el.currentSrc || '').substring(0, 120) || '(empty)'),
+    );
     for (const cb of callbacks) {
       try {
         cb(el);
@@ -110,6 +130,7 @@ export function createMediaDetector(): MediaDetector {
 
   function scanExisting(): void {
     const elements = document.querySelectorAll<HTMLMediaElement>('audio, video');
+    console.log('[DEBUG] detector.scanExisting: found', elements.length, 'audio/video elements');
     for (const el of elements) {
       if (isPageUrlAsSrc(el) || isLikelySoundEffect(el)) continue;
       if (hasValidSource(el)) {
@@ -175,6 +196,9 @@ export function createMediaDetector(): MediaDetector {
     start() {
       if (isRunning) return;
       isRunning = true;
+      console.log(
+        '[DEBUG] detector.start() — patching createElement/Audio, scanning existing, starting MutationObserver',
+      );
 
       patchCreateElement();
       patchAudioConstructor();

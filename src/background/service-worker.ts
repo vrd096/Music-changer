@@ -10,6 +10,7 @@ let sidePanelOnceTabId: number | null = null;
 const sidePanelTabs = new Set<number>();
 const connectedTabs = new Set<number>();
 const connectThrottle = new Map<number, number>();
+let offscreenReady = false;
 
 async function detectUiMode(): Promise<void> {
   try {
@@ -95,6 +96,61 @@ async function updateUiForTab(tab: chrome.tabs.Tab | undefined): Promise<void> {
     }
     runtimeLog.error('[SW] Error updating UI for tab', { tabId: tab.id, error: err });
   }
+}
+
+async function ensureOffscreenDocument(): Promise<void> {
+  if (offscreenReady) return;
+  try {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen/offscreen.html',
+      reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
+      justification: 'BPM/Key analysis via tabCapture',
+    });
+    offscreenReady = true;
+  } catch (e) {
+    if ((e as Error).message?.includes('Only a single offscreen document may be created')) {
+      offscreenReady = true;
+      return;
+    }
+    console.error('[SW] Offscreen failed:', e);
+  }
+}
+
+let bpmKeyCaptureActive = false;
+let bpmKeyCaptureTabId: number | null = null;
+
+async function initiateBpmKeyCapture(tabId: number): Promise<void> {
+  if (bpmKeyCaptureActive) {
+    await stopBpmKeyCapture();
+  }
+  try {
+    await ensureOffscreenDocument();
+    const streamId = await new Promise<string>((resolve, reject) => {
+      chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (sid) => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else if (!sid) reject(new Error('No streamId'));
+        else resolve(sid);
+      });
+    });
+    chrome.runtime.sendMessage({ type: 'STREAM_ID', payload: { streamId } }).catch(() => {});
+    bpmKeyCaptureActive = true;
+    bpmKeyCaptureTabId = tabId;
+    chrome.runtime.sendMessage({ type: 'TABCAPTURE_READY' }).catch(() => {});
+  } catch (e) {
+    console.error('[SW] BPM capture failed:', e);
+    bpmKeyCaptureActive = false;
+  }
+}
+
+async function stopBpmKeyCapture(): Promise<void> {
+  if (!bpmKeyCaptureActive) return;
+  chrome.runtime.sendMessage({ type: 'KILL_AUDIO' }).catch(() => {});
+  try {
+    await chrome.offscreen.closeDocument();
+  } catch {}
+  offscreenReady = false;
+  bpmKeyCaptureActive = false;
+  bpmKeyCaptureTabId = null;
 }
 
 async function sendRuntimeMessage(msg: ServiceWorkerMessage, context: string): Promise<boolean> {
@@ -418,6 +474,47 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
   try {
+    console.log('[SW] onMessage received:', msg.type, 'from:', sender.tab?.id);
+    if (msg.type === 'METRICS_UPDATE') {
+      const p = msg.payload || msg;
+      const bpmVal = p.bpm;
+      const hasBpm = typeof bpmVal === 'number' && bpmVal > 0;
+      const hasKey = typeof p.key === 'string' && p.key.length > 0;
+      console.log(
+        '[SW] METRICS_UPDATE bpm=' +
+          bpmVal +
+          ' key=' +
+          p.key +
+          ' hasBpm=' +
+          hasBpm +
+          ' hasKey=' +
+          hasKey +
+          ' active=' +
+          bpmKeyCaptureActive,
+      );
+      chrome.storage.local
+        .set({
+          detectedBpm: bpmVal ?? null,
+          detectedKey: p.key ?? null,
+          isDetecting: !(hasBpm && hasKey),
+        })
+        .catch(() => {});
+      sendWithRetry({ ...msg, _sourceTabId: sender.tab?.id }, 'metrics-forward');
+      if (hasBpm && bpmKeyCaptureActive) {
+        console.log('[SW] Stopping BPM capture — BPM detected');
+        stopBpmKeyCapture().catch(() => {});
+      }
+      sendResponse(true);
+      return;
+    }
+    if (msg.type === 'REQUEST_BPM_CAPTURE') {
+      const targetTabId = msg.tabId ?? sender.tab?.id;
+      if (targetTabId) {
+        initiateBpmKeyCapture(targetTabId).catch(() => {});
+      }
+      sendResponse(true);
+      return;
+    }
     if (msg.type === 'request-tabcapture') {
       const targetTabId = msg.tabId ?? sender.tab?.id;
       if (targetTabId) {

@@ -2,7 +2,7 @@
 // SidePanel App — Music Pitch Changer
 // ============================================================
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { ServiceWorkerMessage, EqBand } from '../shared/types';
 import { DEFAULT_EQ_BANDS } from '../shared/types';
 import { useTheme } from '../shared/hooks/useTheme';
@@ -45,6 +45,15 @@ export const SidePanelApp: React.FC = () => {
   const [detectedKey, setDetectedKey] = useState<string | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
   const [showMT, setShowMT] = useState(true);
+  const [isDrmSite, setIsDrmSite] = useState(false);
+
+  const effectiveBpm = useMemo(() => {
+    if (detectedBpm !== null) {
+      return Math.round(detectedBpm * speed);
+    }
+    return null;
+  }, [detectedBpm, speed]);
+
   const [uiMode, setUiMode] = useState<string>('popup');
   const [visibleComponents, setVisibleComponents] = useState<Record<string, boolean>>({
     tonality: true,
@@ -61,6 +70,38 @@ export const SidePanelApp: React.FC = () => {
       if (data.visibleComponents)
         setVisibleComponents((prev) => ({ ...prev, ...data.visibleComponents }));
     });
+    chrome.storage.local.get(['isDetecting', 'isDrmSite'], (data) => {
+      if (data.isDetecting !== undefined) setIsDetecting(data.isDetecting);
+      if (data.isDrmSite) setIsDrmSite(true);
+    });
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const url = tabs[0]?.url || '';
+      const drm = url.includes('spotify.com') || url.includes('soundcloud.com');
+      setIsDrmSite(drm);
+      if (!drm) {
+        chrome.storage.local.remove('isDrmSite').catch(() => {});
+      }
+    });
+    const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>) => {
+      console.log('[SidePanel] storage.onChanged:', Object.keys(changes));
+      if (changes.isDetecting !== undefined) {
+        console.log('[SidePanel] storage.onChanged isDetecting:', changes.isDetecting.newValue);
+        setIsDetecting(changes.isDetecting.newValue);
+      }
+      if (changes.isDrmSite?.newValue) {
+        setIsDrmSite(true);
+      }
+    };
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    const pollInterval = setInterval(() => {
+      chrome.storage.local.get(['isDetecting'], (data) => {
+        if (data.isDetecting !== undefined) setIsDetecting(data.isDetecting);
+      });
+    }, 1000);
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+      clearInterval(pollInterval);
+    };
   }, []);
   const getActiveTabId = useCallback(async (): Promise<number | null> => {
     try {
@@ -71,7 +112,12 @@ export const SidePanelApp: React.FC = () => {
     }
   }, []);
   const sendCommand = useCallback(async (data: Record<string, unknown>, retryCount = 0) => {
-    const tabId = activeTabIdRef.current;
+    let tabId = activeTabIdRef.current;
+    if (!tabId) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      tabId = tab?.id ?? null;
+      if (tabId) activeTabIdRef.current = tabId;
+    }
     if (!tabId) return;
     const msg = { sender: 'controls', tabId, ...data };
 
@@ -132,12 +178,38 @@ export const SidePanelApp: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const handleMessage = (msg: ServiceWorkerMessage) => {
+    const handleMessage = (msg: ServiceWorkerMessage | any) => {
+      if (msg.type === 'METRICS_UPDATE') {
+        if (
+          msg._sourceTabId !== undefined &&
+          activeTabIdRef.current !== null &&
+          msg._sourceTabId !== activeTabIdRef.current
+        ) {
+          return;
+        }
+        const p = msg.payload || msg;
+        if (p.bpm !== undefined) setDetectedBpm(p.bpm);
+        if (p.key !== undefined) setDetectedKey(p.key);
+        if (p.isCapturing) setIsDetecting(false);
+        return;
+      }
       if (msg.sender === 'service-worker' && msg.command === 'connect') {
         if (msg.noPermissionContext) setConnectionStatus('no-permission');
         else {
+          const isNewTab = msg.tabId && activeTabIdRef.current !== msg.tabId;
           setConnectionStatus('connected');
+          setIsDetecting(true);
           if (msg.tabId) activeTabIdRef.current = msg.tabId;
+          if (isNewTab) {
+            setDetectedBpm(null);
+            setDetectedKey(null);
+            setSpeed(1);
+            setBpm(128);
+            setSemitone(0);
+            chrome.storage.local
+              .remove(['detectedBpm', 'detectedKey', 'popupSpeed', 'popupSemitone'])
+              .catch(() => {});
+          }
           if (msg.altUrl) {
             const url = msg.altUrl;
             setMediaType(
@@ -177,8 +249,12 @@ export const SidePanelApp: React.FC = () => {
       if (tabId) activeTabIdRef.current = tabId;
       chrome.runtime.sendMessage({ sender: 'sidepanel', command: 'ping' }).catch(() => {});
     });
+    const keepalive = setInterval(() => {
+      chrome.runtime.sendMessage({ sender: 'sidepanel', command: 'ping' }).catch(() => {});
+    }, 20000);
     return () => {
       chrome.runtime.onMessage.removeListener(handleMessage);
+      clearInterval(keepalive);
     };
   }, [getActiveTabId]);
 
@@ -366,6 +442,7 @@ export const SidePanelApp: React.FC = () => {
               onSpeedChange={handleSpeedChange}
               onMasterTempoToggle={handleMasterTempoToggle}
               onReset={handleReset}
+              detectedBpm={detectedBpm}
             />
           )}
           {visibleComponents.eq && (
@@ -376,8 +453,8 @@ export const SidePanelApp: React.FC = () => {
               onBandChange={handleEqBandChange}
             />
           )}
-          {visibleComponents.bpmkey && (
-            <BpmKeyCard bpm={detectedBpm} keyCamelot={detectedKey} isLoading={isDetecting} />
+          {visibleComponents.bpmkey && !isDrmSite && (
+            <BpmKeyCard bpm={effectiveBpm} keyCamelot={detectedKey} isLoading={isDetecting} />
           )}
         </>
       )}

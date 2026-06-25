@@ -41,6 +41,39 @@ window.addEventListener('tp-dispatcher-message', ((event: CustomEvent) => {
   }
 }) as EventListener);
 
+window.addEventListener('message', ((event: MessageEvent) => {
+  if (event.data?.__tp_drm) {
+    chrome.storage.local.set({ isDrmSite: true }).catch(() => {});
+    return;
+  }
+  if (!event.data?.__tp_metrics) return;
+  const detail = event.data.detail;
+  console.log('[Dispatcher] tp-metrics-update received:', detail?.type, detail?.payload);
+  if (!detail) return;
+  const p = detail.payload || detail;
+  if (p.bpm === null || p.key === null) {
+    chrome.storage.local.set({ detectedBpm: null, detectedKey: null }).catch(() => {});
+  }
+  chrome.runtime.sendMessage(detail, () => {
+    if (chrome.runtime.lastError) {
+      console.warn('[Dispatcher] sendMessage failed:', chrome.runtime.lastError.message);
+    } else {
+      console.log('[Dispatcher] sendMessage OK');
+    }
+  });
+}) as EventListener);
+
+window.addEventListener('tp-request-bpm-capture', ((_event: CustomEvent) => {
+  console.log('[Dispatcher] tp-request-bpm-capture received');
+  chrome.runtime.sendMessage({ type: 'REQUEST_BPM_CAPTURE' }, () => void chrome.runtime.lastError);
+}) as EventListener);
+
+chrome.runtime.onMessage.addListener((msg: any) => {
+  if (msg.type === 'TABCAPTURE_READY') {
+    window.dispatchEvent(new CustomEvent('tp-tabcapture-ready'));
+  }
+});
+
 window.addEventListener('tp-command', ((event: CustomEvent) => {
   const detail = event.detail;
   if (!detail || typeof detail.command !== 'string') return;
@@ -73,6 +106,16 @@ function processQueue(): void {
 
 chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
   try {
+    console.log(
+      '[DEBUG] dispatcher routing message to MAIN:',
+      msg
+        ? JSON.stringify({
+            command: msg.command,
+            hasSpeed: msg.speed !== undefined,
+            hasSemitone: msg.semitone !== undefined,
+          })
+        : 'NULL',
+    );
     document.dispatchEvent(
       new CustomEvent('transpose-dispatch-controls-to-content', { detail: msg }),
     );

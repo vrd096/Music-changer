@@ -9,6 +9,10 @@ import {
   pendingMediaElements,
   setMediaElementHandler,
 } from './media-detection';
+import { BpmAnalyzer } from './processing/bpm-analyzer';
+import { KeyAnalyzer } from './processing/key-analyzer';
+import type { BpmResult } from './processing/bpm-analyzer';
+import type { KeyResult } from './processing/key-analyzer';
 
 function isPageUrlAsSrc(el: HTMLMediaElement): boolean {
   if (!el.src) return false;
@@ -46,11 +50,23 @@ function watchBeatportElement(el: HTMLMediaElement): void {
   } catch {}
   const originalPlay = el.play.bind(el);
   let _playRequested = false;
+  let _userGestureCtx: AudioContext | null = null;
   el.play = function (): Promise<void> {
     const src = el.src || el.currentSrc || el.getAttribute('src') || '';
     if (src.includes('geo-samples.beatport.com')) return originalPlay();
     _playRequested = true;
     _pendingPlay = true;
+    if (!_userGestureCtx) {
+      try {
+        _userGestureCtx = new AudioContext({ sampleRate: 44100 });
+        (window as any).___tp_earlyContext = _userGestureCtx;
+        console.log('[Content] Beatport: created AudioContext with user gesture');
+      } catch {}
+    }
+    if (_userGestureCtx && _userGestureCtx.state === 'suspended') {
+      _userGestureCtx.resume();
+      console.log('[Content] Beatport: resumed AudioContext in play() handler');
+    }
     console.log('[Content] Beatport: play() intercepted, src not ready yet, deferring play');
     return Promise.resolve();
   };
@@ -108,6 +124,10 @@ function watchBeatportElement(el: HTMLMediaElement): void {
         _preparingBeatport = true;
         _pendingPlay = false;
         stopUrlPolling();
+        if (!(window as any).___tp_earlyContext) {
+          (window as any).___tp_earlyContext = new AudioContext({ sampleRate: 44100 });
+          console.log('[Content] Beatport: created AudioContext in onPlay (user gesture)');
+        }
         engine.prepareBeatportAudio(src);
       } else {
         _pendingPlay = true;
@@ -219,6 +239,122 @@ export function createAudioEngine(): AudioEngineAPI {
   let _lastKnownSrc = '';
   let _isBufferPlaying = false,
     _isBeatportSeeking = false;
+
+  let bpmAnalyzer: BpmAnalyzer | null = null;
+  let keyAnalyzer: KeyAnalyzer | null = null;
+  let captureNode: AudioWorkletNode | null = null;
+  let captureReady = false;
+
+  let lastBpm: number | null = null;
+  let lastKey: string | null = null;
+  let bpmKeyCaptureRequested = false;
+
+  function requestBpmKeyCapture(): void {
+    if (bpmKeyCaptureRequested) return;
+    bpmKeyCaptureRequested = true;
+    window.dispatchEvent(new CustomEvent('tp-request-bpm-capture', { detail: {} }));
+  }
+
+  function sendMetricsUpdate(): void {
+    const msg = {
+      type: 'METRICS_UPDATE',
+      payload: { bpm: lastBpm, key: lastKey, isCapturing: true },
+    };
+    window.postMessage({ __tp_metrics: true, detail: msg }, '*');
+    try {
+      chrome.runtime?.sendMessage(msg);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function sendBpmResult(result: BpmResult): void {
+    lastBpm = result.bpm;
+    console.log('[AudioEngine] sendBpmResult, bpm=', lastBpm, 'key=', lastKey);
+    sendMetricsUpdate();
+  }
+
+  function sendKeyResult(result: KeyResult): void {
+    lastKey = result.key;
+    console.log('[AudioEngine] sendKeyResult, bpm=', lastBpm, 'key=', lastKey);
+    sendMetricsUpdate();
+  }
+
+  async function initBpmKeyAnalyzers(ctx: AudioContext): Promise<void> {
+    if (captureReady) return;
+    console.log('[AudioEngine] initBpmKeyAnalyzers: called');
+
+    const extOrigin =
+      (typeof chrome !== 'undefined' && chrome.runtime?.getURL ? chrome.runtime.getURL('') : '') ||
+      document.documentElement.dataset.tpExtensionOrigin ||
+      '';
+    if (!extOrigin) {
+      console.warn('[AudioEngine] initBpmKeyAnalyzers: no extOrigin');
+      return;
+    }
+
+    try {
+      console.log('[AudioEngine] initBpmKeyAnalyzers: loading capture-processor.js...');
+      await ctx.audioWorklet.addModule(extOrigin + 'capture-processor.js');
+      console.log('[AudioEngine] initBpmKeyAnalyzers: capture-processor.js loaded OK');
+    } catch (err) {
+      console.warn('[AudioEngine] capture-processor.js load failed:', err);
+      return;
+    }
+
+    captureNode = new AudioWorkletNode(ctx, 'capture-processor', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+    });
+    console.log('[AudioEngine] initBpmKeyAnalyzers: captureNode created');
+
+    // Подключаем текущий bufferSource к captureNode (если уже играет)
+    if (bufferSource && _isBufferPlaying) {
+      try {
+        bufferSource.connect(captureNode);
+        console.log('[AudioEngine] initBpmKeyAnalyzers: existing bufferSource → captureNode');
+      } catch (err) {
+        console.warn('[AudioEngine] initBpmKeyAnalyzers: bufferSource → captureNode failed:', err);
+      }
+    }
+
+    if (!bpmAnalyzer) {
+      bpmAnalyzer = new BpmAnalyzer(ctx.sampleRate, 1.5);
+      bpmAnalyzer.setCallback((result) => {
+        console.log('[AudioEngine] BPM callback:', result);
+        sendBpmResult(result);
+      });
+      console.log(
+        '[AudioEngine] initBpmKeyAnalyzers: BpmAnalyzer created, sampleRate=' + ctx.sampleRate,
+      );
+    }
+    if (!keyAnalyzer) {
+      keyAnalyzer = new KeyAnalyzer(ctx.sampleRate);
+      keyAnalyzer.setCallback((result) => {
+        console.log('[AudioEngine] KEY callback:', result);
+        sendKeyResult(result);
+      });
+      keyAnalyzer.start();
+      console.log('[AudioEngine] initBpmKeyAnalyzers: KeyAnalyzer created and started');
+    }
+
+    let chunkCount = 0;
+    captureNode.port.onmessage = (event: MessageEvent) => {
+      if (event.data?.type === 'audio' && event.data.samples instanceof Float32Array) {
+        chunkCount++;
+        if (chunkCount <= 3 || chunkCount % 50 === 0) {
+          console.log(
+            '[AudioEngine] capture chunk #' + chunkCount + ' len=' + event.data.samples.length,
+          );
+        }
+        bpmAnalyzer?.addChunk(event.data.samples);
+        keyAnalyzer?.addChunk(event.data.samples);
+      }
+    };
+
+    captureReady = true;
+    console.log('[AudioEngine] initBpmKeyAnalyzers: DONE');
+  }
 
   console.log(`[Content] Platform adapter: ${currentAdapter.platform}`);
 
@@ -432,8 +568,11 @@ export function createAudioEngine(): AudioEngineAPI {
 
   function _rerouteBeatportIfNeeded(): void {
     if (!isBeatport || !_isBufferPlaying || !_beatportAudioBuffer) return;
-    const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
-    if (!ctx) return;
+    let ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
+    if (!ctx) {
+      ctx = new AudioContext({ sampleRate: 44100 });
+      (window as any).___tp_earlyContext = ctx;
+    }
     const worklet = tpWorkletNode || stWorkletNode;
     if (!worklet) return;
     console.log('[AudioEngine] Rerouting Beatport BufferSource through worklet');
@@ -453,6 +592,13 @@ export function createAudioEngine(): AudioEngineAPI {
     newSrc.buffer = _beatportAudioBuffer;
     newSrc.playbackRate.value = _getBeatportPlaybackRate();
     newSrc.connect(worklet);
+    if (captureNode) {
+      try {
+        newSrc.connect(captureNode);
+      } catch {
+        /* ignore */
+      }
+    }
     applyPitchState();
     const elapsed = ctx.currentTime - _beatportStartTime;
     const newOff = Math.max(0, _beatportStartOffset + elapsed);
@@ -491,7 +637,9 @@ export function createAudioEngine(): AudioEngineAPI {
       if (!audioContext) {
         const ec = (window as any).___tp_earlyContext;
         audioContext = ec || new AudioContext();
+        (window as any).___tp_earlyContext = audioContext;
         if (ec) console.log('[Content] Using early AudioContext');
+        else console.log('[Content] Created new AudioContext');
       }
       if (audioContext?.state === 'suspended') await audioContext.resume();
       const ctx = audioContext;
@@ -739,8 +887,15 @@ export function createAudioEngine(): AudioEngineAPI {
   }
 
   function startBeatportPlayback(): void {
-    const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
-    if (!ctx || !_beatportAudioBuffer) return;
+    let ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
+    if (!ctx) {
+      ctx = new AudioContext({ sampleRate: 44100 });
+      (window as any).___tp_earlyContext = ctx;
+    }
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    if (!_beatportAudioBuffer) return;
     stopBeatportPlayback();
     console.log(
       '[AudioEngine] startBeatportPlayback: creating BufferSource, speed:',
@@ -766,6 +921,18 @@ export function createAudioEngine(): AudioEngineAPI {
       console.log('[AudioEngine] Beatport BufferSource → destination (no worklet)');
     }
 
+    // Init BPM/Key analyzers via captureNode
+    initBpmKeyAnalyzers(ctx).then(() => {
+      if (captureNode) {
+        try {
+          src.connect(captureNode);
+          console.log('[AudioEngine] Beatport BufferSource → captureNode (BPM/Key)');
+        } catch (err) {
+          console.warn('[AudioEngine] bufferSource → captureNode failed:', err);
+        }
+      }
+    });
+
     _beatportStartTime = ctx.currentTime;
     const off = Math.max(0, _beatportStartOffset);
     applyPitchState();
@@ -780,7 +947,25 @@ export function createAudioEngine(): AudioEngineAPI {
     };
   }
 
+  let pendingBeatportUrl: string | null = null;
+
+  window.addEventListener('tp-tabcapture-ready', () => {
+    console.log('[AudioEngine] tp-tabcapture-ready received, pendingBeatportUrl:', pendingBeatportUrl);
+    if (pendingBeatportUrl) {
+      const url = pendingBeatportUrl;
+      pendingBeatportUrl = null;
+      doPrepareBeatportAudio(url);
+    }
+  });
+
   function prepareBeatportAudio(url: string): void {
+    console.log('[AudioEngine] prepareBeatportAudio:', url);
+    pendingBeatportUrl = url;
+    doPrepareBeatportAudio(url);
+  }
+
+  function doPrepareBeatportAudio(url: string): void {
+    console.log('[AudioEngine] doPrepareBeatportAudio:', url, 'lastKnownSrc:', _lastKnownSrc);
     if (_lastKnownSrc === url && _beatportAudioBuffer) {
       // Ensure worklet is initialized before playback
       const nw =
@@ -802,8 +987,12 @@ export function createAudioEngine(): AudioEngineAPI {
     }
     _lastKnownSrc = url;
     _muteOriginalElement();
-    const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
-    if (!ctx) return;
+    let ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
+    if (!ctx) {
+      ctx = new AudioContext({ sampleRate: 44100 });
+      (window as any).___tp_earlyContext = ctx;
+      console.log('[AudioEngine] Created new AudioContext for Beatport');
+    }
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
 
     // Start worklet init early (in parallel with fetch)
@@ -837,9 +1026,12 @@ export function createAudioEngine(): AudioEngineAPI {
     xhr.responseType = 'arraybuffer';
     xhr.onload = () => {
       if (xhr.status === 200 || xhr.status === 0) {
-        const earlyContext = (window as any).___tp_earlyContext as AudioContext | undefined;
-        if (earlyContext)
-          earlyContext
+        let earlyContext = (window as any).___tp_earlyContext as AudioContext | undefined;
+        if (!earlyContext) {
+          earlyContext = new AudioContext({ sampleRate: 44100 });
+          (window as any).___tp_earlyContext = earlyContext;
+        }
+        earlyContext
             .decodeAudioData(xhr.response)
             .then((audioBuffer) => {
               _beatportAudioBuffer = audioBuffer;
@@ -854,7 +1046,7 @@ export function createAudioEngine(): AudioEngineAPI {
 
   function pauseBeatportPlayback(): void {
     if (bufferSource && _isBufferPlaying) {
-      const ctx = (window as any).___tp_earlyContext as AudioContext | undefined;
+      const ctx = (window as any).___tp_earlyContext as AudioContext | null;
       if (ctx) _beatportStartOffset += ctx.currentTime - _beatportStartTime;
       stopBeatportPlayback();
     }
@@ -881,6 +1073,12 @@ export function createAudioEngine(): AudioEngineAPI {
     _beatportStartOffset = 0;
     _beatportStartTime = 0;
     _isBeatportSeeking = false;
+    bpmKeyCaptureRequested = false;
+    lastBpm = null;
+    lastKey = null;
+    bpmAnalyzer?.reset();
+    keyAnalyzer?.reset();
+    sendMetricsUpdate();
   }
 
   function destroy(): void {
@@ -918,6 +1116,13 @@ export function createAudioEngine(): AudioEngineAPI {
     _lastKnownSrc = '';
     _isBufferPlaying = false;
     setMediaElementHandler(null);
+    bpmAnalyzer?.destroy();
+    bpmAnalyzer = null;
+    keyAnalyzer?.destroy();
+    keyAnalyzer = null;
+    captureNode?.disconnect();
+    captureNode = null;
+    captureReady = false;
   }
 
   return {

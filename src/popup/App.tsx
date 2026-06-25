@@ -2,7 +2,7 @@
 // Popup App — Music Pitch Changer
 // ============================================================
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { MediaState, ServiceWorkerMessage, EqBand } from '../shared/types';
 import { DEFAULT_EQ_BANDS } from '../shared/types';
 import { useTheme } from '../shared/hooks/useTheme';
@@ -48,6 +48,14 @@ export const PopupApp: React.FC = () => {
   const [detectedKey, setDetectedKey] = useState<string | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
   const [showMT, setShowMT] = useState(true);
+  const [isDrmSite, setIsDrmSite] = useState(false);
+
+  const effectiveBpm = useMemo(() => {
+    if (detectedBpm !== null) {
+      return Math.round(detectedBpm * speed);
+    }
+    return null;
+  }, [detectedBpm, speed]);
 
   const [uiMode, setUiMode] = useState<string>('popup');
   const [visibleComponents, setVisibleComponents] = useState<Record<string, boolean>>({
@@ -66,21 +74,44 @@ export const PopupApp: React.FC = () => {
       if (data.visibleComponents)
         setVisibleComponents((prev) => ({ ...prev, ...data.visibleComponents }));
     });
-    chrome.storage.local.get(['tabcaptureNeeded', 'tabcaptureAudioUrl'], (data) => {
-      console.log('[Popup] storage get:', data);
-      if (data.tabcaptureNeeded) {
-        setTabCaptureNeeded(true);
-        setTabCaptureAudioUrl(data.tabcaptureAudioUrl || '');
-      }
+    chrome.storage.local.get(
+      ['tabcaptureNeeded', 'tabcaptureAudioUrl', 'isDetecting', 'isDrmSite'],
+      (data) => {
+        if (data.tabcaptureNeeded) {
+          setTabCaptureNeeded(true);
+          setTabCaptureAudioUrl(data.tabcaptureAudioUrl || '');
+        }
+        if (data.isDetecting !== undefined) setIsDetecting(data.isDetecting);
+        if (data.isDrmSite) setIsDrmSite(true);
+      },
+    );
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const url = tabs[0]?.url || '';
+      const drm = url.includes('spotify.com') || url.includes('soundcloud.com');
+      setIsDrmSite(drm);
+      if (!drm) chrome.storage.local.remove('isDrmSite').catch(() => {});
     });
     const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>) => {
       if (changes.tabcaptureNeeded?.newValue) {
         setTabCaptureNeeded(true);
         setTabCaptureAudioUrl(changes.tabcaptureAudioUrl?.newValue || '');
       }
+      if (changes.isDetecting !== undefined) {
+        setIsDetecting(changes.isDetecting.newValue);
+      }
     };
     chrome.storage.onChanged.addListener(handleStorageChange);
-    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
+    let pollCount = 0;
+    const pollInterval = setInterval(() => {
+      pollCount++;
+      chrome.storage.local.get(['isDetecting'], (data) => {
+        if (data.isDetecting !== undefined) setIsDetecting(data.isDetecting);
+      });
+    }, 500);
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+      clearInterval(pollInterval);
+    };
   }, []);
 
   const getActiveTabId = useCallback(async (): Promise<number | null> => {
@@ -93,7 +124,12 @@ export const PopupApp: React.FC = () => {
   }, []);
 
   const sendCommand = useCallback(async (data: Record<string, unknown>, retryCount = 0) => {
-    const tabId = activeTabIdRef.current;
+    let tabId = activeTabIdRef.current;
+    if (!tabId) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      tabId = tab?.id ?? null;
+      if (tabId) activeTabIdRef.current = tabId;
+    }
     if (!tabId) return;
     const msg = { sender: 'controls', tabId, ...data };
 
@@ -167,6 +203,27 @@ export const PopupApp: React.FC = () => {
 
   useEffect(() => {
     const handleMessage = (msg: ServiceWorkerMessage | any) => {
+      console.log(
+        '[Popup] onMessage:',
+        msg?.type,
+        msg?.command,
+        JSON.stringify(msg).substring(0, 200),
+      );
+      if (msg.type === 'METRICS_UPDATE') {
+        if (
+          msg._sourceTabId !== undefined &&
+          activeTabIdRef.current !== null &&
+          msg._sourceTabId !== activeTabIdRef.current
+        ) {
+          return;
+        }
+        const p = msg.payload || msg;
+        console.log('[Popup] METRICS_UPDATE:', JSON.stringify(p));
+        if (p.bpm !== undefined) setDetectedBpm(p.bpm);
+        if (p.key !== undefined) setDetectedKey(p.key);
+        if (p.isCapturing) setIsDetecting(false);
+        return;
+      }
       if (msg.type === 'tabcapture-needed') {
         setTabCaptureNeeded(true);
         setTabCaptureAudioUrl(msg.url || '');
@@ -175,8 +232,20 @@ export const PopupApp: React.FC = () => {
       if (msg.sender === 'service-worker' && msg.command === 'connect') {
         if (msg.noPermissionContext) setConnectionStatus('no-permission');
         else {
+          const isNewTab = msg.tabId && activeTabIdRef.current !== msg.tabId;
           setConnectionStatus('connected');
+          setIsDetecting(true);
           if (msg.tabId) activeTabIdRef.current = msg.tabId;
+          if (isNewTab) {
+            setDetectedBpm(null);
+            setDetectedKey(null);
+            setSpeed(1);
+            setBpm(128);
+            setSemitone(0);
+            chrome.storage.local
+              .remove(['detectedBpm', 'detectedKey', 'popupSpeed', 'popupSemitone'])
+              .catch(() => {});
+          }
           if (msg.altUrl) {
             const url = msg.altUrl;
             setMediaType(
@@ -216,8 +285,12 @@ export const PopupApp: React.FC = () => {
       if (tabId) activeTabIdRef.current = tabId;
       chrome.runtime.sendMessage({ sender: 'popup', command: 'ping' }).catch(() => {});
     });
+    const keepalive = setInterval(() => {
+      chrome.runtime.sendMessage({ sender: 'popup', command: 'ping' }).catch(() => {});
+    }, 20000);
     return () => {
       chrome.runtime.onMessage.removeListener(handleMessage);
+      clearInterval(keepalive);
     };
   }, [getActiveTabId]);
 
@@ -399,6 +472,7 @@ export const PopupApp: React.FC = () => {
               speed={speed}
               masterTempo={masterTempo}
               showMT={showMT}
+              detectedBpm={detectedBpm}
               onBpmChange={handleBpmChange}
               onSpeedChange={handleSpeedChange}
               onMasterTempoToggle={handleMasterTempoToggle}
@@ -413,8 +487,8 @@ export const PopupApp: React.FC = () => {
               onBandChange={handleEqBandChange}
             />
           )}
-          {visibleComponents.bpmkey && (
-            <BpmKeyCard bpm={detectedBpm} keyCamelot={detectedKey} isLoading={isDetecting} />
+          {visibleComponents.bpmkey && !isDrmSite && (
+            <BpmKeyCard bpm={effectiveBpm} keyCamelot={detectedKey} isLoading={isDetecting} />
           )}
         </>
       )}

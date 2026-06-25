@@ -70,6 +70,8 @@ const requiredFiles = [
   'sidepanel/index.js',
   'tabcapture/tabcapture.html',
   'tabcapture/tabcapture.js',
+  'offscreen/offscreen.html',
+  'offscreen/offscreen.js',
   'assets/debug/debug.html',
   'assets/debug/debug.js',
   'assets/debug/audio-worklet-test.js',
@@ -83,6 +85,7 @@ const requiredFiles = [
   'rb.wasm',
   'bungee-processor.js',
   'soundtouch-processor.js',
+  'capture-processor.js',
 ];
 
 let allFound = true;
