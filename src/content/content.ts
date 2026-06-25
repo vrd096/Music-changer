@@ -64,9 +64,31 @@ function getStrategiesForElement(el: HTMLMediaElement): InterceptionStrategy[] {
   ];
 }
 
+const mediaPauseCleanup = new WeakMap<HTMLMediaElement, () => void>();
+
+function attachPauseClearBpm(el: HTMLMediaElement): void {
+  if (mediaPauseCleanup.has(el)) return;
+  const onPause = () => {
+    try {
+      window.postMessage(
+        {
+          __tp_metrics: true,
+          detail: { type: 'METRICS_UPDATE', payload: { bpm: null, key: null } },
+        },
+        '*',
+      );
+    } catch {
+      /* ignore */
+    }
+  };
+  el.addEventListener('pause', onPause);
+  mediaPauseCleanup.set(el, () => el.removeEventListener('pause', onPause));
+}
+
 function applyFallback(el: HTMLMediaElement): void {
   console.log('[Content] All strategies failed — applying Fallback (Level 5)');
   activeMediaElement = el;
+  attachPauseClearBpm(el);
   try {
     el.preservesPitch = false;
   } catch {
@@ -192,6 +214,7 @@ async function tryCascadeStrategies(
         pipelineActive = true;
         currentStrategyLevel = strategy.level;
         activeMediaElement = el;
+        attachPauseClearBpm(el);
         lastConnectedSrc = el.src || el.currentSrc || '';
         handledElements.add(el);
         resolveLock!();

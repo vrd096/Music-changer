@@ -75,21 +75,12 @@ export const PopupApp: React.FC = () => {
         setVisibleComponents((prev) => ({ ...prev, ...data.visibleComponents }));
     });
     chrome.storage.local.get(
-      [
-        'tabcaptureNeeded',
-        'tabcaptureAudioUrl',
-        'detectedBpm',
-        'detectedKey',
-        'isDetecting',
-        'isDrmSite',
-      ],
+      ['tabcaptureNeeded', 'tabcaptureAudioUrl', 'isDetecting', 'isDrmSite'],
       (data) => {
         if (data.tabcaptureNeeded) {
           setTabCaptureNeeded(true);
           setTabCaptureAudioUrl(data.tabcaptureAudioUrl || '');
         }
-        if (data.detectedBpm !== undefined) setDetectedBpm(data.detectedBpm);
-        if (data.detectedKey !== undefined) setDetectedKey(data.detectedKey);
         if (data.isDetecting !== undefined) setIsDetecting(data.isDetecting);
         if (data.isDrmSite) setIsDrmSite(true);
       },
@@ -105,13 +96,6 @@ export const PopupApp: React.FC = () => {
         setTabCaptureNeeded(true);
         setTabCaptureAudioUrl(changes.tabcaptureAudioUrl?.newValue || '');
       }
-      if (changes.detectedBpm !== undefined) {
-        setDetectedBpm(changes.detectedBpm.newValue ?? null);
-        if (changes.isDetecting?.newValue === false) setIsDetecting(false);
-      }
-      if (changes.detectedKey !== undefined) {
-        setDetectedKey(changes.detectedKey.newValue ?? null);
-      }
       if (changes.isDetecting !== undefined) {
         setIsDetecting(changes.isDetecting.newValue);
       }
@@ -120,12 +104,7 @@ export const PopupApp: React.FC = () => {
     let pollCount = 0;
     const pollInterval = setInterval(() => {
       pollCount++;
-      chrome.storage.local.get(['detectedBpm', 'detectedKey', 'isDetecting'], (data) => {
-        if (pollCount <= 3 || pollCount % 10 === 0) {
-          console.log('[Popup] poll #' + pollCount + ':', JSON.stringify(data));
-        }
-        if (data.detectedBpm !== undefined) setDetectedBpm(data.detectedBpm);
-        if (data.detectedKey !== undefined) setDetectedKey(data.detectedKey);
+      chrome.storage.local.get(['isDetecting'], (data) => {
         if (data.isDetecting !== undefined) setIsDetecting(data.isDetecting);
       });
     }, 500);
@@ -231,6 +210,13 @@ export const PopupApp: React.FC = () => {
         JSON.stringify(msg).substring(0, 200),
       );
       if (msg.type === 'METRICS_UPDATE') {
+        if (
+          msg._sourceTabId !== undefined &&
+          activeTabIdRef.current !== null &&
+          msg._sourceTabId !== activeTabIdRef.current
+        ) {
+          return;
+        }
         const p = msg.payload || msg;
         console.log('[Popup] METRICS_UPDATE:', JSON.stringify(p));
         if (p.bpm !== undefined) setDetectedBpm(p.bpm);
@@ -246,9 +232,20 @@ export const PopupApp: React.FC = () => {
       if (msg.sender === 'service-worker' && msg.command === 'connect') {
         if (msg.noPermissionContext) setConnectionStatus('no-permission');
         else {
+          const isNewTab = msg.tabId && activeTabIdRef.current !== msg.tabId;
           setConnectionStatus('connected');
           setIsDetecting(true);
           if (msg.tabId) activeTabIdRef.current = msg.tabId;
+          if (isNewTab) {
+            setDetectedBpm(null);
+            setDetectedKey(null);
+            setSpeed(1);
+            setBpm(128);
+            setSemitone(0);
+            chrome.storage.local
+              .remove(['detectedBpm', 'detectedKey', 'popupSpeed', 'popupSemitone'])
+              .catch(() => {});
+          }
           if (msg.altUrl) {
             const url = msg.altUrl;
             setMediaType(

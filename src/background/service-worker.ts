@@ -499,7 +499,7 @@ chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
           isDetecting: !(hasBpm && hasKey),
         })
         .catch(() => {});
-      sendWithRetry(msg, 'metrics-forward');
+      sendWithRetry({ ...msg, _sourceTabId: sender.tab?.id }, 'metrics-forward');
       if (hasBpm && bpmKeyCaptureActive) {
         console.log('[SW] Stopping BPM capture — BPM detected');
         stopBpmKeyCapture().catch(() => {});

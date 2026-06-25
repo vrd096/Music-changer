@@ -70,9 +70,7 @@ export const SidePanelApp: React.FC = () => {
       if (data.visibleComponents)
         setVisibleComponents((prev) => ({ ...prev, ...data.visibleComponents }));
     });
-    chrome.storage.local.get(['detectedBpm', 'detectedKey', 'isDetecting', 'isDrmSite'], (data) => {
-      if (data.detectedBpm !== undefined) setDetectedBpm(data.detectedBpm);
-      if (data.detectedKey !== undefined) setDetectedKey(data.detectedKey);
+    chrome.storage.local.get(['isDetecting', 'isDrmSite'], (data) => {
       if (data.isDetecting !== undefined) setIsDetecting(data.isDetecting);
       if (data.isDrmSite) setIsDrmSite(true);
     });
@@ -86,15 +84,6 @@ export const SidePanelApp: React.FC = () => {
     });
     const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>) => {
       console.log('[SidePanel] storage.onChanged:', Object.keys(changes));
-      if (changes.detectedBpm !== undefined) {
-        console.log('[SidePanel] storage.onChanged detectedBpm:', changes.detectedBpm.newValue);
-        setDetectedBpm(changes.detectedBpm.newValue ?? null);
-        if (changes.isDetecting?.newValue === false) setIsDetecting(false);
-      }
-      if (changes.detectedKey !== undefined) {
-        console.log('[SidePanel] storage.onChanged detectedKey:', changes.detectedKey.newValue);
-        setDetectedKey(changes.detectedKey.newValue ?? null);
-      }
       if (changes.isDetecting !== undefined) {
         console.log('[SidePanel] storage.onChanged isDetecting:', changes.isDetecting.newValue);
         setIsDetecting(changes.isDetecting.newValue);
@@ -105,9 +94,7 @@ export const SidePanelApp: React.FC = () => {
     };
     chrome.storage.onChanged.addListener(handleStorageChange);
     const pollInterval = setInterval(() => {
-      chrome.storage.local.get(['detectedBpm', 'detectedKey', 'isDetecting'], (data) => {
-        if (data.detectedBpm !== undefined) setDetectedBpm(data.detectedBpm);
-        if (data.detectedKey !== undefined) setDetectedKey(data.detectedKey);
+      chrome.storage.local.get(['isDetecting'], (data) => {
         if (data.isDetecting !== undefined) setIsDetecting(data.isDetecting);
       });
     }, 1000);
@@ -193,6 +180,13 @@ export const SidePanelApp: React.FC = () => {
   useEffect(() => {
     const handleMessage = (msg: ServiceWorkerMessage | any) => {
       if (msg.type === 'METRICS_UPDATE') {
+        if (
+          msg._sourceTabId !== undefined &&
+          activeTabIdRef.current !== null &&
+          msg._sourceTabId !== activeTabIdRef.current
+        ) {
+          return;
+        }
         const p = msg.payload || msg;
         if (p.bpm !== undefined) setDetectedBpm(p.bpm);
         if (p.key !== undefined) setDetectedKey(p.key);
@@ -202,9 +196,20 @@ export const SidePanelApp: React.FC = () => {
       if (msg.sender === 'service-worker' && msg.command === 'connect') {
         if (msg.noPermissionContext) setConnectionStatus('no-permission');
         else {
+          const isNewTab = msg.tabId && activeTabIdRef.current !== msg.tabId;
           setConnectionStatus('connected');
           setIsDetecting(true);
           if (msg.tabId) activeTabIdRef.current = msg.tabId;
+          if (isNewTab) {
+            setDetectedBpm(null);
+            setDetectedKey(null);
+            setSpeed(1);
+            setBpm(128);
+            setSemitone(0);
+            chrome.storage.local
+              .remove(['detectedBpm', 'detectedKey', 'popupSpeed', 'popupSemitone'])
+              .catch(() => {});
+          }
           if (msg.altUrl) {
             const url = msg.altUrl;
             setMediaType(
