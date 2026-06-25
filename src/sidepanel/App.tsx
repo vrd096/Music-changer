@@ -125,7 +125,12 @@ export const SidePanelApp: React.FC = () => {
     }
   }, []);
   const sendCommand = useCallback(async (data: Record<string, unknown>, retryCount = 0) => {
-    const tabId = activeTabIdRef.current;
+    let tabId = activeTabIdRef.current;
+    if (!tabId) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      tabId = tab?.id ?? null;
+      if (tabId) activeTabIdRef.current = tabId;
+    }
     if (!tabId) return;
     const msg = { sender: 'controls', tabId, ...data };
 

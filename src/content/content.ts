@@ -9,6 +9,7 @@ import { createBufferStrategy } from './interception/strategy-buffer';
 import { createFallbackStrategy } from './interception/strategy-fallback';
 import { createPipeline, type ProcessingPipeline } from './processing/pipeline';
 import type { InterceptionStrategy } from './interception/types';
+import { getOrCreateEarlyContext } from './interception/context-provider';
 
 const useLegacyEngine = isBeatport;
 
@@ -71,7 +72,17 @@ function applyFallback(el: HTMLMediaElement): void {
   } catch {
     // ignore
   }
-  pipeline?.connect(null, el);
+
+  let sourceNode: MediaElementAudioSourceNode | null = null;
+  try {
+    const ctx = getOrCreateEarlyContext();
+    sourceNode = ctx.createMediaElementSource(el);
+    console.log('[DEBUG] applyFallback: createMediaElementSource succeeded');
+  } catch (e) {
+    console.warn('[DEBUG] applyFallback: createMediaElementSource failed:', (e as Error).message);
+  }
+
+  pipeline?.connect(sourceNode, el);
   pipeline?.setStrategyLevel(5);
   pipelineActive = true;
   currentStrategyLevel = 5;
@@ -124,7 +135,9 @@ async function tryCascadeStrategies(
       lastConnectedSrc = currentSrc;
       pipelineActive = false;
       pipeline?.stopCurrentAudio();
-      try { (el as HTMLAudioElement).muted = true; } catch {}
+      try {
+        (el as HTMLAudioElement).muted = true;
+      } catch {}
     } else {
       console.log('[Content] Pipeline already active on same element, skipping cascade');
       return;
@@ -139,10 +152,16 @@ async function tryCascadeStrategies(
 
   console.log('[Content] Starting cascade with', strategies.length, 'strategies');
   let resolveLock: () => void;
-  cascadeLock = new Promise<void>((r) => { resolveLock = r; });
+  cascadeLock = new Promise<void>((r) => {
+    resolveLock = r;
+  });
 
   for (const strategy of strategies) {
-    if (pipelineActive) { resolveLock!(); cascadeLock = null; return; }
+    if (pipelineActive) {
+      resolveLock!();
+      cascadeLock = null;
+      return;
+    }
 
     console.log('[Content] Trying', strategy.name, '(Level', strategy.level, ')');
 
@@ -175,7 +194,8 @@ async function tryCascadeStrategies(
         activeMediaElement = el;
         lastConnectedSrc = el.src || el.currentSrc || '';
         handledElements.add(el);
-        resolveLock!(); cascadeLock = null;
+        resolveLock!();
+        cascadeLock = null;
         setTimeout(() => pipeline?.setSemitone(0), 100);
         return;
       }
@@ -188,11 +208,22 @@ async function tryCascadeStrategies(
   if (!pipelineActive) {
     applyFallback(el);
   }
-  resolveLock!(); cascadeLock = null;
+  resolveLock!();
+  cascadeLock = null;
 }
 
 document.addEventListener('transpose-dispatch-controls-to-content', ((event: CustomEvent) => {
   const msg = event.detail;
+  console.log(
+    '[DEBUG] content.ts received dispatch:',
+    msg
+      ? JSON.stringify({
+          command: msg.command,
+          hasSpeed: msg.speed !== undefined,
+          hasSemitone: msg.semitone !== undefined,
+        })
+      : 'NULL',
+  );
   if (!msg || typeof msg !== 'object') return;
   const { command, ...params } = msg;
 
@@ -227,9 +258,10 @@ document.addEventListener('transpose-dispatch-controls-to-content', ((event: Cus
 
   if (params.speed !== undefined) {
     pipeline.setSpeed(params.speed);
-    if (currentStrategyLevel === 5 && activeMediaElement) {
+    const media = activeMediaElement || document.querySelector('audio, video');
+    if (media) {
       try {
-        activeMediaElement.playbackRate = Math.max(0.25, Math.min(16, params.speed));
+        media.playbackRate = Math.max(0.25, Math.min(16, params.speed));
       } catch {
         // ignore
       }
@@ -279,9 +311,18 @@ if (!(window as any)[INIT_FLAG]) {
       (window as any).___tp_audioEngine = audioEngine;
     } else {
       console.log('[Content] Universal pipeline mode — detecting media elements');
+      console.log('[DEBUG] Page URL:', window.location.href);
       pipeline = createPipeline();
       const detector = createMediaDetector();
       detector.onElement((el) => {
+        console.log(
+          '[DEBUG] detector.onElement fired:',
+          'tag=' + el.tagName,
+          'src=' + ((el.src || el.currentSrc || '').substring(0, 120) || '(empty)'),
+          'readyState=' + el.readyState,
+          'paused=' + el.paused,
+          'duration=' + el.duration,
+        );
         const strategies = getStrategiesForElement(el);
         tryCascadeStrategies(el, strategies);
       });

@@ -93,22 +93,24 @@ export function createPipeline(): ProcessingPipeline {
 
   function sendStateUpdate(): void {
     try {
-      window.dispatchEvent(new CustomEvent('tp-command', {
-        detail: {
-          sender: 'content',
-          command: 'set-from-content',
-          speed: state.speed,
-          semitone: state.semitone,
-          pitch: state.pitch,
-          formant: state.formant,
-          loopMode: state.loopMode,
-          varispeed: state.varispeed,
-          eqEnabled: state.eqEnabled,
-          masterTempo: state.masterTempo,
-          eqBands,
-          strategyLevel,
-        },
-      }));
+      window.dispatchEvent(
+        new CustomEvent('tp-command', {
+          detail: {
+            sender: 'content',
+            command: 'set-from-content',
+            speed: state.speed,
+            semitone: state.semitone,
+            pitch: state.pitch,
+            formant: state.formant,
+            loopMode: state.loopMode,
+            varispeed: state.varispeed,
+            eqEnabled: state.eqEnabled,
+            masterTempo: state.masterTempo,
+            eqBands,
+            strategyLevel,
+          },
+        }),
+      );
     } catch {
       // ignore
     }
@@ -121,7 +123,7 @@ export function createPipeline(): ProcessingPipeline {
   }
 
   async function initWorkletAndConnect(): Promise<void> {
-    console.log('[Pipeline] initWorkletAndConnect called', {
+    console.log('[DEBUG] initWorkletAndConnect called', {
       isDestroyed,
       workletConnected,
       hasSource: !!currentSource,
@@ -136,7 +138,10 @@ export function createPipeline(): ProcessingPipeline {
     }
 
     const ctx = (audioContext || currentSource.context) as AudioContext;
-    if (!ctx) { console.warn('[Pipeline] no AudioContext'); return; }
+    if (!ctx) {
+      console.warn('[Pipeline] no AudioContext');
+      return;
+    }
 
     if (ctx.state === 'suspended') {
       const res = await ctx.resume();
@@ -154,7 +159,9 @@ export function createPipeline(): ProcessingPipeline {
     if (!node) {
       console.log('[Pipeline] Worklet NULL — fallback to direct gain');
       if (currentSource && gainNode) {
-        try { currentSource.disconnect(); } catch {}
+        try {
+          currentSource.disconnect();
+        } catch {}
         currentSource.connect(gainNode);
         gainNode.connect(ctx.destination);
       }
@@ -162,8 +169,12 @@ export function createPipeline(): ProcessingPipeline {
     }
 
     workletNode = node;
-    try { workletNode.disconnect(); } catch {}
-    try { if (currentSource) currentSource.disconnect(); } catch {}
+    try {
+      workletNode.disconnect();
+    } catch {}
+    try {
+      if (currentSource) currentSource.disconnect();
+    } catch {}
 
     currentSource!.connect(workletNode);
 
@@ -183,7 +194,9 @@ export function createPipeline(): ProcessingPipeline {
       }
     }
 
-    try { gainNode.disconnect(); } catch {}
+    try {
+      gainNode.disconnect();
+    } catch {}
 
     if (eqFilters.length > 0) {
       workletNode.connect(eqFilters[0]);
@@ -206,7 +219,12 @@ export function createPipeline(): ProcessingPipeline {
   }
 
   async function initCaptureAndAnalyzers(ctx: AudioContext): Promise<void> {
-    console.log('[Pipeline] initCaptureAndAnalyzers: called, captureReady=', captureReady, 'ctx.state=', ctx.state);
+    console.log(
+      '[Pipeline] initCaptureAndAnalyzers: called, captureReady=',
+      captureReady,
+      'ctx.state=',
+      ctx.state,
+    );
 
     if (captureReady) {
       console.log('[Pipeline] initCaptureAndAnalyzers: resetting analyzers for new track');
@@ -229,7 +247,10 @@ export function createPipeline(): ProcessingPipeline {
     }
 
     try {
-      console.log('[Pipeline] initCaptureAndAnalyzers: loading capture-processor.js from', extOrigin + 'capture-processor.js');
+      console.log(
+        '[Pipeline] initCaptureAndAnalyzers: loading capture-processor.js from',
+        extOrigin + 'capture-processor.js',
+      );
       await ctx.audioWorklet.addModule(extOrigin + 'capture-processor.js');
       console.log('[Pipeline] initCaptureAndAnalyzers: capture-processor.js loaded OK');
     } catch (err) {
@@ -479,7 +500,18 @@ export function createPipeline(): ProcessingPipeline {
 
   const pipeline: ProcessingPipeline = {
     connect(sourceNode: AudioNode | null, mediaEl?: HTMLMediaElement | null) {
-      if (isDestroyed) return;
+      console.log(
+        '[DEBUG] pipeline.connect: source=',
+        sourceNode ? sourceNode.constructor.name : 'NULL',
+        'isBuffer=',
+        !!(sourceNode && 'start' in sourceNode && 'buffer' in sourceNode),
+        'mediaEl=',
+        mediaEl ? mediaEl.tagName : 'NULL',
+      );
+      if (isDestroyed) {
+        console.log('[DEBUG] pipeline.connect: destroyed, skipping');
+        return;
+      }
 
       cleanupBufferElementHooks();
       stopBufferPlayback();
@@ -494,8 +526,12 @@ export function createPipeline(): ProcessingPipeline {
       workletConnected = false;
 
       if (prevWorkletSource && sourceNode && prevWorkletSource !== sourceNode) {
-        try { (prevWorkletSource as any).stop?.(); } catch {}
-        try { prevWorkletSource.disconnect(); } catch {}
+        try {
+          (prevWorkletSource as any).stop?.();
+        } catch {}
+        try {
+          prevWorkletSource.disconnect();
+        } catch {}
       } else if (sourceNode === prevWorkletSource && wasWorkletConnected) {
         workletConnected = true;
         return;
@@ -657,8 +693,12 @@ export function createPipeline(): ProcessingPipeline {
 
     stopCurrentAudio() {
       if (currentSource) {
-        try { (currentSource as any).stop?.(); } catch {}
-        try { currentSource.disconnect(); } catch {}
+        try {
+          (currentSource as any).stop?.();
+        } catch {}
+        try {
+          currentSource.disconnect();
+        } catch {}
       }
     },
 

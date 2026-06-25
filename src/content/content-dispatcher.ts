@@ -106,6 +106,16 @@ function processQueue(): void {
 
 chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
   try {
+    console.log(
+      '[DEBUG] dispatcher routing message to MAIN:',
+      msg
+        ? JSON.stringify({
+            command: msg.command,
+            hasSpeed: msg.speed !== undefined,
+            hasSemitone: msg.semitone !== undefined,
+          })
+        : 'NULL',
+    );
     document.dispatchEvent(
       new CustomEvent('transpose-dispatch-controls-to-content', { detail: msg }),
     );
