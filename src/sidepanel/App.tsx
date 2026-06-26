@@ -148,17 +148,8 @@ export const SidePanelApp: React.FC = () => {
       setTimeout(() => sendCommand(data, retryCount + 1), 1000);
       return;
     }
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.url) {
-      const urlObj = new URL(tab.url);
-      const pattern = `${urlObj.protocol}//${urlObj.hostname}/*`;
-      const hasPerms = await chrome.permissions.contains({ origins: [pattern] });
-      if (!hasPerms) {
-        setPendingHostUrl(tab.url);
-        setConnectionStatus('no-permission');
-      } else if (retryCount < 3) {
-        setTimeout(() => sendCommand(data, retryCount + 1), 800);
-      }
+    if (retryCount < 3) {
+      setTimeout(() => sendCommand(data, retryCount + 1), 800);
     }
   }, []);
   const requestHostPermission = useCallback(async (url: string) => {
@@ -232,6 +223,15 @@ export const SidePanelApp: React.FC = () => {
                 !url.includes('vk.com') &&
                 !url.includes('vkvideo.ru'),
             );
+            (async () => {
+              const urlObj = new URL(url);
+              const pattern = `${urlObj.protocol}//${urlObj.hostname}/*`;
+              const hasPerms = await chrome.permissions.contains({ origins: [pattern] });
+              if (!hasPerms) {
+                setPendingHostUrl(url);
+                setConnectionStatus('no-permission');
+              }
+            })();
           }
           chrome.storage.local.get(['popupSpeed', 'popupSemitone', 'popupMasterTempo'], (data) => {
             if (data.popupSpeed !== undefined) {
@@ -306,13 +306,17 @@ export const SidePanelApp: React.FC = () => {
     });
   }, [sendCommand, speed, semitone, saveState]);
 
-  const handleReset = useCallback(() => {
+  const handleResetTonality = useCallback(() => {
+    setSemitone(0);
+    sendCommand({ semitone: 0 });
+  }, [sendCommand]);
+
+  const handleResetSpeed = useCallback(() => {
     setSpeed(1);
     setBpm(128);
-    setSemitone(0);
-    saveState(1, 0, masterTempo);
-    sendCommand({ speed: 1, semitone: 0 });
-  }, [sendCommand, masterTempo, saveState]);
+    saveState(1, semitone, masterTempo);
+    sendCommand({ speed: 1 });
+  }, [sendCommand, semitone, masterTempo, saveState]);
   const handleEqBandChange = useCallback(
     (i: number, g: number) => {
       setEqBands((p) => {
@@ -428,7 +432,7 @@ export const SidePanelApp: React.FC = () => {
             <TonalityCard
               semitone={semitone}
               onChange={handleSemitoneChange}
-              onReset={handleReset}
+              onReset={handleResetTonality}
             />
           )}
           {visibleComponents.speed && (
@@ -441,7 +445,7 @@ export const SidePanelApp: React.FC = () => {
               onBpmChange={handleBpmChange}
               onSpeedChange={handleSpeedChange}
               onMasterTempoToggle={handleMasterTempoToggle}
-              onReset={handleReset}
+              onReset={handleResetSpeed}
               detectedBpm={detectedBpm}
             />
           )}
