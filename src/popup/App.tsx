@@ -69,10 +69,11 @@ export const PopupApp: React.FC = () => {
   const permissionJustGrantedRef = useRef(false);
 
   useEffect(() => {
-    chrome.storage.sync.get(['uiMode', 'visibleComponents'], (data) => {
+    chrome.storage.sync.get(['uiMode', 'visibleComponents', 'eqEnabled'], (data) => {
       if (data.uiMode) setUiMode(data.uiMode);
       if (data.visibleComponents)
         setVisibleComponents((prev) => ({ ...prev, ...data.visibleComponents }));
+      if (data.eqEnabled !== undefined) setEqEnabled(data.eqEnabled);
     });
     chrome.storage.local.get(
       ['tabcaptureNeeded', 'tabcaptureAudioUrl', 'isDetecting', 'isDrmSite'],
@@ -329,6 +330,7 @@ export const PopupApp: React.FC = () => {
   const handleEqToggle = useCallback(
     (c: boolean) => {
       setEqEnabled(c);
+      chrome.storage.sync.set({ eqEnabled: c }).catch(() => {});
       sendCommand({ eqEnabled: c });
     },
     [sendCommand],
