@@ -91,6 +91,17 @@ export const PopupApp: React.FC = () => {
       const drm = url.includes('spotify.com') || url.includes('soundcloud.com');
       setIsDrmSite(drm);
       if (!drm) chrome.storage.local.remove('isDrmSite').catch(() => {});
+
+      const tabId = tabs[0]?.id;
+      if (tabId) {
+        activeTabIdRef.current = tabId;
+        chrome.storage.local.get([`eqBands_${tabId}`], (data) => {
+          const saved = data[`eqBands_${tabId}`];
+          if (saved && Array.isArray(saved) && saved.length === 6) {
+            setEqBands(saved);
+          }
+        });
+      }
     });
     const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>) => {
       if (changes.tabcaptureNeeded?.newValue) {
@@ -357,7 +368,11 @@ export const PopupApp: React.FC = () => {
   }, [sendCommand, semitone, masterTempo, saveState]);
 
   const handleResetEq = useCallback(() => {
-    setEqBands(DEFAULT_EQ_BANDS.map((b) => ({ ...b })));
+    const defaultBands = DEFAULT_EQ_BANDS.map((b) => ({ ...b }));
+    setEqBands(defaultBands);
+    chrome.storage.local
+      .set({ [`eqBands_${activeTabIdRef.current}`]: defaultBands })
+      .catch(() => {});
     DEFAULT_EQ_BANDS.forEach((_, i) => {
       sendCommand({ eqBand: { index: i, gain: 0 } });
     });
@@ -368,6 +383,7 @@ export const PopupApp: React.FC = () => {
       setEqBands((p) => {
         const u = [...p];
         u[i] = { ...u[i], gain: g };
+        chrome.storage.local.set({ [`eqBands_${activeTabIdRef.current}`]: u }).catch(() => {});
         return u;
       });
       sendCommand({ eqBand: { index: i, gain: g } });

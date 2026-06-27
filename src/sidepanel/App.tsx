@@ -82,6 +82,17 @@ export const SidePanelApp: React.FC = () => {
       if (!drm) {
         chrome.storage.local.remove('isDrmSite').catch(() => {});
       }
+
+      const tabId = tabs[0]?.id;
+      if (tabId) {
+        activeTabIdRef.current = tabId;
+        chrome.storage.local.get([`eqBands_${tabId}`], (data) => {
+          const saved = data[`eqBands_${tabId}`];
+          if (saved && Array.isArray(saved) && saved.length === 6) {
+            setEqBands(saved);
+          }
+        });
+      }
     });
     const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>) => {
       console.log('[SidePanel] storage.onChanged:', Object.keys(changes));
@@ -321,7 +332,11 @@ export const SidePanelApp: React.FC = () => {
   }, [sendCommand, semitone, masterTempo, saveState]);
 
   const handleResetEq = useCallback(() => {
-    setEqBands(DEFAULT_EQ_BANDS.map((b) => ({ ...b })));
+    const defaultBands = DEFAULT_EQ_BANDS.map((b) => ({ ...b }));
+    setEqBands(defaultBands);
+    chrome.storage.local
+      .set({ [`eqBands_${activeTabIdRef.current}`]: defaultBands })
+      .catch(() => {});
     DEFAULT_EQ_BANDS.forEach((_, i) => {
       sendCommand({ eqBand: { index: i, gain: 0 } });
     });
@@ -332,6 +347,7 @@ export const SidePanelApp: React.FC = () => {
       setEqBands((p) => {
         const u = [...p];
         u[i] = { ...u[i], gain: g };
+        chrome.storage.local.set({ [`eqBands_${activeTabIdRef.current}`]: u }).catch(() => {});
         return u;
       });
       sendCommand({ eqBand: { index: i, gain: g } });
