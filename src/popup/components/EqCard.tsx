@@ -7,6 +7,7 @@ interface EqCardProps {
   bands: EqBand[];
   onToggle: (checked: boolean) => void;
   onBandChange: (index: number, gain: number) => void;
+  onReset: () => void;
 }
 
 const FREQ_LABELS = ['30', '120', '350', '1.2k', '3.5k', '9k'];
@@ -113,7 +114,13 @@ function EqBandSlider({ gain, freqLabel, onChange }: EqBandSliderProps) {
   );
 }
 
-export const EqCard: React.FC<EqCardProps> = ({ enabled, bands, onToggle, onBandChange }) => {
+export const EqCard: React.FC<EqCardProps> = ({
+  enabled,
+  bands,
+  onToggle,
+  onBandChange,
+  onReset,
+}) => {
   const displayBands = bands.length === 6 ? bands : DEFAULT_EQ_BANDS;
 
   const handleToggle = useCallback(() => {
@@ -130,23 +137,34 @@ export const EqCard: React.FC<EqCardProps> = ({ enabled, bands, onToggle, onBand
           style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
           Эквалайзер
         </span>
-        <div
-          onClick={handleToggle}
-          className="relative cursor-pointer rounded-full"
-          style={{
-            width: '28px',
-            height: '14px',
-            background: enabled ? 'var(--toggle-active-bg)' : 'var(--toggle-bg)',
-          }}>
+        <div className="flex items-center gap-2">
+          {enabled && (
+            <button
+              onClick={onReset}
+              className="w-[24px] h-[24px] rounded-full border-0 cursor-pointer flex items-center justify-center text-[14px] transition-colors"
+              style={{ background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}
+              title="Сбросить эквалайзер">
+              ↺
+            </button>
+          )}
           <div
-            className="absolute top-0.5 rounded-full transition-all"
+            onClick={handleToggle}
+            className="relative cursor-pointer rounded-full"
             style={{
-              width: '10px',
-              height: '10px',
-              background: 'var(--toggle-knob)',
-              left: enabled ? '16px' : '2px',
-            }}
-          />
+              width: '28px',
+              height: '14px',
+              background: enabled ? 'var(--toggle-active-bg)' : 'var(--toggle-bg)',
+            }}>
+            <div
+              className="absolute top-0.5 rounded-full transition-all"
+              style={{
+                width: '10px',
+                height: '10px',
+                background: 'var(--toggle-knob)',
+                left: enabled ? '16px' : '2px',
+              }}
+            />
+          </div>
         </div>
       </div>
       {enabled && (

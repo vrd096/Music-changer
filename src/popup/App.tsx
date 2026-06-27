@@ -353,6 +353,14 @@ export const PopupApp: React.FC = () => {
     saveState(1, semitone, masterTempo);
     sendCommand({ speed: 1 });
   }, [sendCommand, semitone, masterTempo, saveState]);
+
+  const handleResetEq = useCallback(() => {
+    setEqBands(DEFAULT_EQ_BANDS.map((b) => ({ ...b })));
+    DEFAULT_EQ_BANDS.forEach((_, i) => {
+      sendCommand({ eqBand: { index: i, gain: 0 } });
+    });
+  }, [sendCommand]);
+
   const handleEqBandChange = useCallback(
     (i: number, g: number) => {
       setEqBands((p) => {
@@ -489,6 +497,7 @@ export const PopupApp: React.FC = () => {
               bands={eqBands}
               onToggle={handleEqToggle}
               onBandChange={handleEqBandChange}
+              onReset={handleResetEq}
             />
           )}
           {visibleComponents.bpmkey && !isDrmSite && (
