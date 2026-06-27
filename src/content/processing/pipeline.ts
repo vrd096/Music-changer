@@ -157,14 +157,36 @@ export function createPipeline(): ProcessingPipeline {
     const node = await workletLoader.load(ctx);
 
     if (!node) {
-      console.log('[Pipeline] Worklet NULL — fallback to direct gain');
+      console.log('[Pipeline] Worklet NULL — fallback to direct gain + EQ');
+      if (eqFilters.length === 0) {
+        for (const band of eqBands) {
+          const filter = ctx.createBiquadFilter();
+          filter.type = band.type;
+          filter.frequency.value = band.frequency;
+          filter.gain.value = band.gain;
+          filter.Q.value = band.Q;
+          eqFilters.push(filter);
+        }
+        if (eqFilters.length > 1) {
+          for (let j = 0; j < eqFilters.length - 1; j++) {
+            eqFilters[j].connect(eqFilters[j + 1]);
+          }
+        }
+      }
       if (currentSource && gainNode) {
         try {
           currentSource.disconnect();
         } catch {}
-        currentSource.connect(gainNode);
+        if (eqFilters.length > 0) {
+          currentSource.connect(eqFilters[0]);
+          eqFilters[eqFilters.length - 1].connect(gainNode);
+        } else {
+          currentSource.connect(gainNode);
+        }
         gainNode.connect(ctx.destination);
       }
+      workletConnected = true;
+      applyEqState();
       return;
     }
 

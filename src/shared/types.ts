@@ -31,7 +31,7 @@ export interface EqBand {
 
 /** Default EQ bands (6-band equalizer) */
 export const DEFAULT_EQ_BANDS: EqBand[] = [
-  { type: 'highpass', frequency: 30, gain: 0, Q: 0.7 },
+  { type: 'lowshelf', frequency: 30, gain: 0, Q: 0.7 },
   { type: 'lowshelf', frequency: 120, gain: 0, Q: 0.7 },
   { type: 'peaking', frequency: 350, gain: 0, Q: 1 },
   { type: 'peaking', frequency: 1200, gain: 0, Q: 1 },
