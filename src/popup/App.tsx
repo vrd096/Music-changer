@@ -66,14 +66,14 @@ export const PopupApp: React.FC = () => {
   });
 
   const activeTabIdRef = useRef<number | null>(null);
+  const eqStorageKeyRef = useRef<string | null>(null);
   const permissionJustGrantedRef = useRef(false);
 
   useEffect(() => {
-    chrome.storage.sync.get(['uiMode', 'visibleComponents', 'eqEnabled'], (data) => {
+    chrome.storage.sync.get(['uiMode', 'visibleComponents'], (data) => {
       if (data.uiMode) setUiMode(data.uiMode);
       if (data.visibleComponents)
         setVisibleComponents((prev) => ({ ...prev, ...data.visibleComponents }));
-      if (data.eqEnabled !== undefined) setEqEnabled(data.eqEnabled);
     });
     chrome.storage.local.get(
       ['tabcaptureNeeded', 'tabcaptureAudioUrl', 'isDetecting', 'isDrmSite'],
@@ -95,10 +95,25 @@ export const PopupApp: React.FC = () => {
       const tabId = tabs[0]?.id;
       if (tabId) {
         activeTabIdRef.current = tabId;
-        chrome.storage.local.get([`eqBands_${tabId}`], (data) => {
-          const saved = data[`eqBands_${tabId}`];
-          if (saved && Array.isArray(saved) && saved.length === 6) {
-            setEqBands(saved);
+        chrome.storage.local.get(['eqSettings'], (data) => {
+          const saved = data['eqSettings'];
+          if (saved && typeof saved === 'object') {
+            if (saved.bands && Array.isArray(saved.bands) && saved.bands.length === 6) {
+              setEqBands(saved.bands);
+              if (saved.enabled) {
+                saved.bands.forEach((band: any, i: number) => {
+                  if (band.gain !== undefined && band.gain !== 0) {
+                    sendCommand({ eqBand: { index: i, gain: band.gain } });
+                  }
+                });
+              }
+            }
+            if (typeof saved.enabled === 'boolean') {
+              setEqEnabled(saved.enabled);
+              if (saved.enabled) {
+                sendCommand({ eqEnabled: true });
+              }
+            }
           }
         });
       }
@@ -341,10 +356,11 @@ export const PopupApp: React.FC = () => {
   const handleEqToggle = useCallback(
     (c: boolean) => {
       setEqEnabled(c);
-      chrome.storage.sync.set({ eqEnabled: c }).catch(() => {});
+      const eqSettings = { enabled: c, bands: eqBands };
+      chrome.storage.local.set({ eqSettings }).catch(() => {});
       sendCommand({ eqEnabled: c });
     },
-    [sendCommand],
+    [sendCommand, eqBands],
   );
   const handleMasterTempoToggle = useCallback(() => {
     setMasterTempo((prev) => {
@@ -371,7 +387,7 @@ export const PopupApp: React.FC = () => {
     const defaultBands = DEFAULT_EQ_BANDS.map((b) => ({ ...b }));
     setEqBands(defaultBands);
     chrome.storage.local
-      .set({ [`eqBands_${activeTabIdRef.current}`]: defaultBands })
+      .set({ eqSettings: { enabled: false, bands: defaultBands } })
       .catch(() => {});
     DEFAULT_EQ_BANDS.forEach((_, i) => {
       sendCommand({ eqBand: { index: i, gain: 0 } });
@@ -383,7 +399,8 @@ export const PopupApp: React.FC = () => {
       setEqBands((p) => {
         const u = [...p];
         u[i] = { ...u[i], gain: g };
-        chrome.storage.local.set({ [`eqBands_${activeTabIdRef.current}`]: u }).catch(() => {});
+        const eqSettings = { enabled: true, bands: u };
+        chrome.storage.local.set({ eqSettings }).catch(() => {});
         return u;
       });
       sendCommand({ eqBand: { index: i, gain: g } });

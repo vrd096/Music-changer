@@ -39,6 +39,28 @@ export function createPipeline(): ProcessingPipeline {
   const state: AudioEngineState = { ...DEFAULT_STATE };
   const eqBands: EqBand[] = DEFAULT_EQ_BANDS.map((b) => ({ ...b }));
   const eqFilters: BiquadFilterNode[] = [];
+  async function loadSavedEqBands(): Promise<void> {
+    try {
+      const data = await chrome.storage.local.get(['eqSettings']);
+      const saved = data['eqSettings'];
+      if (saved && typeof saved === 'object') {
+        if (saved.bands && Array.isArray(saved.bands) && saved.bands.length === 6) {
+          saved.bands.forEach((band: any, i: number) => {
+            if (i < eqBands.length && band.gain !== undefined) {
+              eqBands[i] = { ...eqBands[i], gain: band.gain };
+            }
+          });
+        }
+        if (typeof saved.enabled === 'boolean') {
+          state.eqEnabled = saved.enabled;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  loadSavedEqBands();
 
   let audioContext: AudioContext | null = null;
   let workletNode: AudioWorkletNode | null = null;
@@ -131,6 +153,7 @@ export function createPipeline(): ProcessingPipeline {
       isBufferSource,
     });
     if (isDestroyed || workletConnected) return;
+    await loadSavedEqBands();
     if (!currentSource) {
       console.log('[Pipeline] No source (fallback mode) — BPM/Key not available');
       sendMetricsUpdate();
@@ -230,6 +253,8 @@ export function createPipeline(): ProcessingPipeline {
 
     gainNode.connect(ctx.destination);
     workletConnected = true;
+
+    applyEqState();
 
     if (currentSource && currentSource.context) {
       initCaptureAndAnalyzers(currentSource.context as AudioContext).catch(() => {});
