@@ -66,6 +66,7 @@ export const PopupApp: React.FC = () => {
   });
 
   const activeTabIdRef = useRef<number | null>(null);
+  const eqStorageKeyRef = useRef<string | null>(null);
   const permissionJustGrantedRef = useRef(false);
 
   useEffect(() => {
@@ -90,6 +91,35 @@ export const PopupApp: React.FC = () => {
       const drm = url.includes('spotify.com') || url.includes('soundcloud.com');
       setIsDrmSite(drm);
       if (!drm) chrome.storage.local.remove('isDrmSite').catch(() => {});
+
+      const tabId = tabs[0]?.id;
+      if (tabId) {
+        activeTabIdRef.current = tabId;
+        chrome.storage.local.get(['eqSettings'], (data) => {
+          const saved = data['eqSettings'];
+          if (saved && typeof saved === 'object') {
+            if (saved.bands && Array.isArray(saved.bands) && saved.bands.length === 6) {
+              setEqBands(saved.bands);
+              if (saved.enabled) {
+                saved.bands.forEach((band: any, i: number) => {
+                  if (band.gain !== undefined && band.gain !== 0) {
+                    sendCommand({ eqBand: { index: i, gain: band.gain } });
+                  }
+                });
+              }
+            }
+            if (typeof saved.enabled === 'boolean') {
+              setEqEnabled(saved.enabled);
+              if (saved.enabled) {
+                sendCommand({ eqEnabled: true });
+              }
+            }
+            if (typeof saved.preset === 'string' && saved.preset) {
+              setSavedPreset(saved.preset);
+            }
+          }
+        });
+      }
     });
     const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>) => {
       if (changes.tabcaptureNeeded?.newValue) {
@@ -329,9 +359,11 @@ export const PopupApp: React.FC = () => {
   const handleEqToggle = useCallback(
     (c: boolean) => {
       setEqEnabled(c);
+      const eqSettings = { enabled: c, bands: eqBands };
+      chrome.storage.local.set({ eqSettings }).catch(() => {});
       sendCommand({ eqEnabled: c });
     },
-    [sendCommand],
+    [sendCommand, eqBands],
   );
   const handleMasterTempoToggle = useCallback(() => {
     setMasterTempo((prev) => {
@@ -353,11 +385,43 @@ export const PopupApp: React.FC = () => {
     saveState(1, semitone, masterTempo);
     sendCommand({ speed: 1 });
   }, [sendCommand, semitone, masterTempo, saveState]);
+
+  const handleResetEq = useCallback(() => {
+    const defaultBands = DEFAULT_EQ_BANDS.map((b) => ({ ...b }));
+    setEqBands(defaultBands);
+    setSavedPreset('flat');
+    chrome.storage.local
+      .set({ eqSettings: { enabled: false, bands: defaultBands, preset: 'flat' } })
+      .catch(() => {});
+    DEFAULT_EQ_BANDS.forEach((_, i) => {
+      sendCommand({ eqBand: { index: i, gain: 0 } });
+    });
+  }, [sendCommand]);
+
+  const [savedPreset, setSavedPreset] = useState<string>('flat');
+
+  const handlePresetSelect = useCallback(
+    (presetName: string, gains: number[]) => {
+      const newBands = DEFAULT_EQ_BANDS.map((b, i) => ({ ...b, gain: gains[i] ?? 0 }));
+      setEqBands(newBands);
+      setSavedPreset(presetName);
+      chrome.storage.local
+        .set({ eqSettings: { enabled: true, bands: newBands, preset: presetName } })
+        .catch(() => {});
+      gains.forEach((g, i) => {
+        sendCommand({ eqBand: { index: i, gain: g } });
+      });
+    },
+    [sendCommand],
+  );
+
   const handleEqBandChange = useCallback(
     (i: number, g: number) => {
       setEqBands((p) => {
         const u = [...p];
         u[i] = { ...u[i], gain: g };
+        const eqSettings = { enabled: true, bands: u };
+        chrome.storage.local.set({ eqSettings }).catch(() => {});
         return u;
       });
       sendCommand({ eqBand: { index: i, gain: g } });
@@ -487,8 +551,11 @@ export const PopupApp: React.FC = () => {
             <EqCard
               enabled={eqEnabled}
               bands={eqBands}
+              savedPreset={savedPreset}
               onToggle={handleEqToggle}
               onBandChange={handleEqBandChange}
+              onReset={handleResetEq}
+              onPresetSelect={handlePresetSelect}
             />
           )}
           {visibleComponents.bpmkey && !isDrmSite && (

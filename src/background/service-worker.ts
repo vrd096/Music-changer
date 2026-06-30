@@ -515,6 +515,10 @@ chrome.runtime.onMessage.addListener((msg: any, sender, sendResponse) => {
       sendResponse(true);
       return;
     }
+    if (msg.type === 'GET_TAB_ID') {
+      sendResponse({ tabId: sender.tab?.id ?? null });
+      return true;
+    }
     if (msg.type === 'request-tabcapture') {
       const targetTabId = msg.tabId ?? sender.tab?.id;
       if (targetTabId) {

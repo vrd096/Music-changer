@@ -536,22 +536,31 @@ export function createAudioEngine(): AudioEngineAPI {
   }
 
   function _ensureEqChain(): void {
-    if (eqFilters.length > 0) return;
     if (!audioContext || !gainNode) return;
-    for (const band of eqBands) {
-      const filter = audioContext.createBiquadFilter();
-      filter.type = band.type;
-      filter.frequency.value = band.frequency;
-      filter.gain.value = band.gain;
-      filter.Q.value = band.Q;
-      eqFilters.push(filter);
-    }
-    const worklet = tpWorkletNode || stWorkletNode;
-    if (worklet && eqFilters.length > 0) {
-      worklet.disconnect();
-      worklet.connect(eqFilters[0]);
+    if (eqFilters.length === 0) {
+      for (const band of eqBands) {
+        const filter = audioContext.createBiquadFilter();
+        filter.type = band.type;
+        filter.frequency.value = band.frequency;
+        filter.gain.value = band.gain;
+        filter.Q.value = band.Q;
+        eqFilters.push(filter);
+      }
+      if (eqFilters.length === 0) return;
       for (let i = 0; i < eqFilters.length - 1; i++) eqFilters[i].connect(eqFilters[i + 1]);
       eqFilters[eqFilters.length - 1].connect(gainNode);
+    }
+    const worklet = tpWorkletNode || stWorkletNode;
+    if (worklet) {
+      try {
+        worklet.disconnect();
+      } catch {}
+      worklet.connect(eqFilters[0]);
+    } else if (!isBeatport && sourceNode) {
+      try {
+        sourceNode.disconnect();
+      } catch {}
+      sourceNode.connect(eqFilters[0]);
     }
   }
 
@@ -702,7 +711,7 @@ export function createAudioEngine(): AudioEngineAPI {
           workletInitPromise = null;
         }
       }
-      if (!isBeatport && sourceNode) _ensureEqChain();
+      _ensureEqChain();
       applyPitchState();
     } catch (err) {
       logError('Content', 'AudioWorklet init failed', err);
@@ -897,6 +906,13 @@ export function createAudioEngine(): AudioEngineAPI {
     }
     if (!_beatportAudioBuffer) return;
     stopBeatportPlayback();
+    audioContext = ctx;
+    if (!gainNode) {
+      gainNode = ctx.createGain();
+      gainNode.gain.value = 1;
+      gainNode.connect(ctx.destination);
+    }
+    _ensureEqChain();
     console.log(
       '[AudioEngine] startBeatportPlayback: creating BufferSource, speed:',
       state.speed,
@@ -907,18 +923,13 @@ export function createAudioEngine(): AudioEngineAPI {
     src.buffer = _beatportAudioBuffer;
     src.playbackRate.value = _getBeatportPlaybackRate();
 
-    // Route through SoundTouchJS worklet if available, otherwise direct
     const worklet = tpWorkletNode || stWorkletNode;
     if (worklet) {
       src.connect(worklet);
-      console.log(
-        '[AudioEngine] Beatport BufferSource → worklet (channels:',
-        _beatportAudioBuffer.numberOfChannels,
-        ')',
-      );
+    } else if (eqFilters.length > 0) {
+      src.connect(eqFilters[0]);
     } else {
-      src.connect(ctx.destination);
-      console.log('[AudioEngine] Beatport BufferSource → destination (no worklet)');
+      src.connect(gainNode || ctx.destination);
     }
 
     // Init BPM/Key analyzers via captureNode
@@ -936,6 +947,7 @@ export function createAudioEngine(): AudioEngineAPI {
     _beatportStartTime = ctx.currentTime;
     const off = Math.max(0, _beatportStartOffset);
     applyPitchState();
+    _applyEqState();
     src.start(0, off >= _beatportAudioBuffer.duration ? 0 : off);
     bufferSource = src;
     _isBufferPlaying = true;
@@ -950,7 +962,10 @@ export function createAudioEngine(): AudioEngineAPI {
   let pendingBeatportUrl: string | null = null;
 
   window.addEventListener('tp-tabcapture-ready', () => {
-    console.log('[AudioEngine] tp-tabcapture-ready received, pendingBeatportUrl:', pendingBeatportUrl);
+    console.log(
+      '[AudioEngine] tp-tabcapture-ready received, pendingBeatportUrl:',
+      pendingBeatportUrl,
+    );
     if (pendingBeatportUrl) {
       const url = pendingBeatportUrl;
       pendingBeatportUrl = null;
@@ -1032,12 +1047,12 @@ export function createAudioEngine(): AudioEngineAPI {
           (window as any).___tp_earlyContext = earlyContext;
         }
         earlyContext
-            .decodeAudioData(xhr.response)
-            .then((audioBuffer) => {
-              _beatportAudioBuffer = audioBuffer;
-              startBeatportPlayback();
-            })
-            .catch(() => {});
+          .decodeAudioData(xhr.response)
+          .then((audioBuffer) => {
+            _beatportAudioBuffer = audioBuffer;
+            startBeatportPlayback();
+          })
+          .catch(() => {});
       }
     };
     xhr.onerror = () => {};
