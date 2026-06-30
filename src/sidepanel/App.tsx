@@ -105,6 +105,9 @@ export const SidePanelApp: React.FC = () => {
                 sendCommand({ eqEnabled: true });
               }
             }
+            if (typeof saved.preset === 'string' && saved.preset) {
+              setSavedPreset(saved.preset);
+            }
           }
         });
       }
@@ -347,16 +350,34 @@ export const SidePanelApp: React.FC = () => {
     sendCommand({ speed: 1 });
   }, [sendCommand, semitone, masterTempo, saveState]);
 
+  const [savedPreset, setSavedPreset] = useState<string>('flat');
+
   const handleResetEq = useCallback(() => {
     const defaultBands = DEFAULT_EQ_BANDS.map((b) => ({ ...b }));
     setEqBands(defaultBands);
+    setSavedPreset('flat');
     chrome.storage.local
-      .set({ eqSettings: { enabled: false, bands: defaultBands } })
+      .set({ eqSettings: { enabled: false, bands: defaultBands, preset: 'flat' } })
       .catch(() => {});
     DEFAULT_EQ_BANDS.forEach((_, i) => {
       sendCommand({ eqBand: { index: i, gain: 0 } });
     });
   }, [sendCommand]);
+
+  const handlePresetSelect = useCallback(
+    (presetName: string, gains: number[]) => {
+      const newBands = DEFAULT_EQ_BANDS.map((b, i) => ({ ...b, gain: gains[i] ?? 0 }));
+      setEqBands(newBands);
+      setSavedPreset(presetName);
+      chrome.storage.local
+        .set({ eqSettings: { enabled: true, bands: newBands, preset: presetName } })
+        .catch(() => {});
+      gains.forEach((g, i) => {
+        sendCommand({ eqBand: { index: i, gain: g } });
+      });
+    },
+    [sendCommand],
+  );
 
   const handleEqBandChange = useCallback(
     (i: number, g: number) => {
@@ -496,9 +517,11 @@ export const SidePanelApp: React.FC = () => {
             <EqCard
               enabled={eqEnabled}
               bands={eqBands}
+              savedPreset={savedPreset}
               onToggle={handleEqToggle}
               onBandChange={handleEqBandChange}
               onReset={handleResetEq}
+              onPresetSelect={handlePresetSelect}
             />
           )}
           {visibleComponents.bpmkey && !isDrmSite && (

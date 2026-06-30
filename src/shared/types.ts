@@ -39,6 +39,25 @@ export const DEFAULT_EQ_BANDS: EqBand[] = [
   { type: 'highshelf', frequency: 9000, gain: 0, Q: 0.7 },
 ];
 
+export interface EqPreset {
+  name: string;
+  label: string;
+  bands: number[];
+}
+
+export const EQ_PRESETS: EqPreset[] = [
+  { name: 'flat', label: 'Flat', bands: [0, 0, 0, 0, 0, 0] },
+  { name: 'bass-boost', label: 'Bass Boost', bands: [6, 4, 2, 0, 0, 0] },
+  { name: 'treble-boost', label: 'Treble Boost', bands: [0, 0, 0, 0, 3, 5] },
+  { name: 'vocal-boost', label: 'Vocal Boost', bands: [-2, -1, 0, 3, 2, 0] },
+  { name: 'electronic', label: 'Electronic / EDM', bands: [6, 4, -1, -2, 3, 4] },
+  { name: 'rock', label: 'Rock', bands: [3, 2, 1, -1, 3, 2] },
+  { name: 'hip-hop', label: 'Hip-Hop', bands: [6, 5, 2, -1, 0, 1] },
+  { name: 'jazz', label: 'Jazz', bands: [0, 1, 2, 2, 1, 0] },
+  { name: 'classical', label: 'Classical', bands: [0, 0, 0, 1, 2, 3] },
+  { name: 'lounge', label: 'Lounge / Chill', bands: [3, 2, 0, 0, 1, 2] },
+];
+
 /** Media/track state */
 export interface MediaState {
   url: string;

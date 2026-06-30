@@ -1,13 +1,15 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import type { EqBand } from '../../shared/types';
-import { DEFAULT_EQ_BANDS } from '../../shared/types';
+import { DEFAULT_EQ_BANDS, EQ_PRESETS } from '../../shared/types';
 
 interface EqCardProps {
   enabled: boolean;
   bands: EqBand[];
+  savedPreset: string;
   onToggle: (checked: boolean) => void;
   onBandChange: (index: number, gain: number) => void;
   onReset: () => void;
+  onPresetSelect: (presetName: string, gains: number[]) => void;
 }
 
 const FREQ_LABELS = ['30', '120', '350', '1.2k', '3.5k', '9k'];
@@ -117,15 +119,36 @@ function EqBandSlider({ gain, freqLabel, onChange }: EqBandSliderProps) {
 export const EqCard: React.FC<EqCardProps> = ({
   enabled,
   bands,
+  savedPreset,
   onToggle,
   onBandChange,
   onReset,
+  onPresetSelect,
 }) => {
   const displayBands = bands.length === 6 ? bands : DEFAULT_EQ_BANDS;
+  const [activePreset, setActivePreset] = useState<string>(savedPreset);
 
   const handleToggle = useCallback(() => {
     onToggle(!enabled);
   }, [enabled, onToggle]);
+
+  const handlePresetChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const name = e.target.value;
+      if (!name) return;
+      const preset = EQ_PRESETS.find((p) => p.name === name);
+      if (preset) {
+        setActivePreset(name);
+        onPresetSelect(name, preset.bands);
+      }
+    },
+    [onPresetSelect],
+  );
+
+  const handleReset = useCallback(() => {
+    setActivePreset('');
+    onReset();
+  }, [onReset]);
 
   return (
     <div
@@ -167,6 +190,24 @@ export const EqCard: React.FC<EqCardProps> = ({
           </div>
         </div>
       </div>
+      {enabled && (
+        <div className="mb-2">
+          <select
+            value={activePreset}
+            onChange={handlePresetChange}
+            className="w-full rounded px-2 py-1 text-[10px] border-0 cursor-pointer outline-none"
+            style={{
+              background: 'var(--bg-primary)',
+              color: 'var(--text-primary)',
+            }}>
+            {EQ_PRESETS.map((p) => (
+              <option key={p.name} value={p.name}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       {enabled && (
         <>
           <div className="flex justify-between mb-1 px-px">

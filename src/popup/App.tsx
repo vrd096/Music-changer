@@ -114,6 +114,9 @@ export const PopupApp: React.FC = () => {
                 sendCommand({ eqEnabled: true });
               }
             }
+            if (typeof saved.preset === 'string' && saved.preset) {
+              setSavedPreset(saved.preset);
+            }
           }
         });
       }
@@ -386,13 +389,31 @@ export const PopupApp: React.FC = () => {
   const handleResetEq = useCallback(() => {
     const defaultBands = DEFAULT_EQ_BANDS.map((b) => ({ ...b }));
     setEqBands(defaultBands);
+    setSavedPreset('flat');
     chrome.storage.local
-      .set({ eqSettings: { enabled: false, bands: defaultBands } })
+      .set({ eqSettings: { enabled: false, bands: defaultBands, preset: 'flat' } })
       .catch(() => {});
     DEFAULT_EQ_BANDS.forEach((_, i) => {
       sendCommand({ eqBand: { index: i, gain: 0 } });
     });
   }, [sendCommand]);
+
+  const [savedPreset, setSavedPreset] = useState<string>('flat');
+
+  const handlePresetSelect = useCallback(
+    (presetName: string, gains: number[]) => {
+      const newBands = DEFAULT_EQ_BANDS.map((b, i) => ({ ...b, gain: gains[i] ?? 0 }));
+      setEqBands(newBands);
+      setSavedPreset(presetName);
+      chrome.storage.local
+        .set({ eqSettings: { enabled: true, bands: newBands, preset: presetName } })
+        .catch(() => {});
+      gains.forEach((g, i) => {
+        sendCommand({ eqBand: { index: i, gain: g } });
+      });
+    },
+    [sendCommand],
+  );
 
   const handleEqBandChange = useCallback(
     (i: number, g: number) => {
@@ -530,9 +551,11 @@ export const PopupApp: React.FC = () => {
             <EqCard
               enabled={eqEnabled}
               bands={eqBands}
+              savedPreset={savedPreset}
               onToggle={handleEqToggle}
               onBandChange={handleEqBandChange}
               onReset={handleResetEq}
+              onPresetSelect={handlePresetSelect}
             />
           )}
           {visibleComponents.bpmkey && !isDrmSite && (
